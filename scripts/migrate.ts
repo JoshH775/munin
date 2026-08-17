@@ -50,7 +50,17 @@ for (const name of files) {
 if (!failed && command === 'reset') {
   const seed = await readFile('src/db/seed.sql', 'utf8')
   await client.query(seed)
-  console.log('Seeded')
+
+  // parameterised ($1) so the persona's quotes/$/backslashes never touch the SQL text
+  const systemPrompt = await readFile('system.md', 'utf8').catch(() => null)
+  if (systemPrompt) {
+    await client.query("update agent_settings set system_prompt = $1 where channel_id = 'global'", [
+      systemPrompt,
+    ])
+    console.log('Seeded (global persona from system.md)')
+  } else {
+    console.warn('Seeded (system.md not found - global persona left null)')
+  }
 }
 
 await client.end()
