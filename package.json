@@ -7,7 +7,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch index.ts",
     "db:migration": "f() { p=\"src/db/migrations/$(date -u +%Y%m%d%H%M%S)_${1:?usage: pnpm db:migration <name>}.sql\"; touch \"$p\"; echo \"$p\"; }; f",
-    "db:push": "tsx scripts/migrate.ts"
+    "db:push": "tsx scripts/migrate.ts push",
+    "db:reset": "tsx scripts/migrate.ts reset",
+    "db:types": "kysely-codegen --dialect postgres --out-file src/db/types.ts",
+    "db:up": "docker compose -f docker-compose.dev.yml up -d --wait",
+    "db:down": "docker compose -f docker-compose.dev.yml down"
   },
   "keywords": [],
   "author": "",
@@ -21,10 +25,20 @@
   },
   "type": "module",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "dedent": "^1.7.2",
     "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
+    "kysely": "^0.29.5",
+    "pg": "^8.23.0",
+    "ts-pattern": "^5.9.0",
     "tsx": "^4.23.12",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/pg": "^8.21.0",
+    "kysely-codegen": "^0.20.0"
   }
 }
