@@ -1,0 +1,30 @@
+# dev database + gateway UI — the pnpm db:* scripts target this file only,
+# so db:reset can never touch munin-prod's volume.
+name: munin-dev
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:5434:5432" # loopback only — never remove the 127.0.0.1 (docker bypasses ufw)
+    volumes:
+      - pgdata:/var/lib/postgresql # PG18 path; 17 and earlier used /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      interval: 2s
+      retries: 15
+
+  gateway:
+    image: ghcr.io/drizzle-team/gateway:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:54324:4983" # 54324: eventloop's gateway owns 54323
+    volumes:
+      - ./.gateway:/app # bind mount: connection config survives db:reset
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
