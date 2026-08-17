@@ -20,7 +20,7 @@ services:
     image: ghcr.io/drizzle-team/gateway:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:54324:4983" # 54324: eventloop's gateway owns 54323
+      - "127.0.0.1:54323:4983"
     volumes:
       - ./.gateway:/app # bind mount: connection config survives db:reset
     depends_on:
