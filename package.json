@@ -7,8 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch index.ts",
     "db:migration": "f() { p=\"src/db/migrations/$(date -u +%Y%m%d%H%M%S)_${1:?usage: pnpm db:migration <name>}.sql\"; touch \"$p\"; echo \"$p\"; }; f",
-    "db:push": "tsx scripts/migrate.ts push",
-    "db:reset": "tsx scripts/migrate.ts reset",
+    "db:push": "tsx scripts/migrate.ts push && pnpm db:types",
+    "db:reset": "tsx scripts/migrate.ts reset && pnpm db:types",
     "db:types": "kysely-codegen --dialect postgres --out-file src/db/types.ts",
     "db:up": "docker compose -f docker-compose.dev.yml up -d --wait",
     "db:down": "docker compose -f docker-compose.dev.yml down"
