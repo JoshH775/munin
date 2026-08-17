@@ -9,11 +9,12 @@ create table agent_settings (
 
 create table messages (
     id TEXT NOT NULL PRIMARY KEY,
-    channel_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL, -- the life domain; a thread resolves to its parent channel
+    thread_id TEXT,           -- null = top-level channel message; else the discord thread id
     user_id TEXT NOT NULL, -- discord snowflake
     user_name TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-create index messages_channel_created_idx on messages (channel_id, created_at);
+create index messages_channel_thread_created_idx on messages (channel_id, thread_id, created_at);
