@@ -30,6 +30,7 @@ export interface Messages {
   content: string;
   created_at: Generated<Timestamp>;
   id: string;
+  thread_id: string | null;
   user_id: string;
   user_name: string;
 }
