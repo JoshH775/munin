@@ -28,6 +28,7 @@ export interface AgentSettings {
 export interface Messages {
   channel_id: string;
   content: string;
+  created_at: Generated<Timestamp>;
   id: string;
   user_id: string;
   user_name: string;

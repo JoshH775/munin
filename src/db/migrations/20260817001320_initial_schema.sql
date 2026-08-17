@@ -12,5 +12,8 @@ create table messages (
     channel_id TEXT NOT NULL,
     user_id TEXT NOT NULL, -- discord snowflake
     user_name TEXT NOT NULL,
-    content TEXT NOT NULL
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+create index messages_channel_created_idx on messages (channel_id, created_at);
