@@ -14,7 +14,8 @@ create table messages (
     user_id TEXT NOT NULL, -- discord snowflake
     user_name TEXT NOT NULL,
     content TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    sent_at TIMESTAMPTZ NOT NULL,                  -- when the message was sent on discord (message.createdAt)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()  -- when this row was inserted (bookkeeping)
 );
 
-create index messages_channel_thread_created_idx on messages (channel_id, thread_id, created_at);
+create index messages_channel_thread_sent_idx on messages (channel_id, thread_id, sent_at);
