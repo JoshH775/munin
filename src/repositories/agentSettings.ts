@@ -38,10 +38,13 @@ export async function resolveSettings(
   }
 }
 
-export async function updateMemory(
-  channelId: string,
+export async function updateMemory({
+  channelId,
+  memory,
+}: {
+  channelId: string
   memory: string
-): Promise<void> {
+}): Promise<void> {
   await db
     .insertInto('agent_settings')
     .values({ channel_id: channelId, memory })
@@ -51,10 +54,14 @@ export async function updateMemory(
     .execute()
 }
 
-export async function updateConfig(
-  channelId: string,
-  patch: { model?: Anthropic.Model | null; system_prompt?: string | null }
-): Promise<void> {
+export async function updateConfig({
+  channelId,
+  ...patch
+}: {
+  channelId: string
+  model?: Anthropic.Model | null
+  system_prompt?: string | null
+}): Promise<void> {
   await db
     .insertInto('agent_settings')
     .values({ channel_id: channelId, ...patch })
