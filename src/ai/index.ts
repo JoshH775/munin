@@ -5,6 +5,9 @@ import type { Tool } from './makeTool'
 
 const claude = new Anthropic()
 
+export const efforts = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+export type Effort = (typeof efforts)[number]
+
 export type TurnParams = {
   messages: readonly Anthropic.MessageParam[]
   system: string | (() => string)
@@ -13,7 +16,7 @@ export type TurnParams = {
   model: Anthropic.Model
   tools?: Tool<any>[]
   maxTokens?: number
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  effort?: Effort
   onRoundStart?: () => void
   onToolUse?: (name: string) => void
 }
@@ -121,4 +124,12 @@ export async function turn(params: TurnParams): Promise<{
     ended: false,
     messages: conversation,
   }
+}
+
+export async function listModelIds(): Promise<string[]> {
+  const ids: string[] = []
+  for await (const model of claude.models.list({ limit: 1000 })) {
+    if (model.id.startsWith('claude-')) ids.push(model.id)
+  }
+  return ids
 }

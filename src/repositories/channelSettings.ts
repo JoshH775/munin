@@ -3,17 +3,18 @@ import { fileURLToPath } from 'node:url'
 import Anthropic from '@anthropic-ai/sdk'
 import { sql } from 'kysely'
 import { db } from '../db'
-import { models } from '../ai/models'
+import { type Effort } from '../ai'
 
 const globalPersona = readFileSync(
   fileURLToPath(new URL('../../system.md', import.meta.url)),
   'utf8'
 ).trim()
 
-export type AgentSettings = {
+export type ChannelSettings = {
   channelId: string
   parentChannelId: string | null
   model: Anthropic.Model
+  effort: Effort
   persona: string
   memory: string
   parentMemoryChannelId: string
@@ -22,12 +23,12 @@ export type AgentSettings = {
 export async function resolveSettings(
   channelId: string,
   parentChannelId: string | null
-): Promise<AgentSettings> {
+): Promise<ChannelSettings> {
   const ids = [channelId, parentChannelId, 'global'].filter(
     (id): id is string => id !== null
   )
   const rows = await db
-    .selectFrom('agent_settings')
+    .selectFrom('channel_settings')
     .selectAll()
     .where('channel_id', 'in', ids)
     .execute()
@@ -35,6 +36,9 @@ export async function resolveSettings(
   const global = rows.find((r) => r.channel_id === 'global')
   if (!global) {
     throw new Error('Global settings row not found')
+  }
+  if (global.model == null || global.effort == null) {
+    throw new Error('Global row is missing default model/effort')
   }
   const parent = parentChannelId
     ? rows.find((r) => r.channel_id === parentChannelId)
@@ -44,7 +48,8 @@ export async function resolveSettings(
   return {
     channelId,
     parentChannelId,
-    model: own?.model ?? parent?.model ?? global.model ?? models.sonnet5,
+    model: own?.model ?? parent?.model ?? global.model,
+    effort: own?.effort ?? parent?.effort ?? global.effort,
     persona: [globalPersona, parent?.system_prompt, own?.system_prompt]
       .filter(Boolean)
       .join('\n\n'),
@@ -68,7 +73,7 @@ export async function updateMemory({
   memory: string
 }): Promise<void> {
   await db
-    .insertInto('agent_settings')
+    .insertInto('channel_settings')
     .values({ channel_id: channelId, memory })
     .onConflict((oc) =>
       oc.column('channel_id').doUpdateSet({ memory, updated_at: sql`now()` })
@@ -82,10 +87,11 @@ export async function updateConfig({
 }: {
   channelId: string
   model?: Anthropic.Model | null
+  effort?: Effort | null
   system_prompt?: string | null
 }): Promise<void> {
   await db
-    .insertInto('agent_settings')
+    .insertInto('channel_settings')
     .values({ channel_id: channelId, ...patch })
     .onConflict((oc) =>
       oc.column('channel_id').doUpdateSet({ ...patch, updated_at: sql`now()` })
@@ -97,5 +103,5 @@ export async function updateConfig({
 export async function deleteSettings(channelIds: string[]): Promise<void> {
   const ids = channelIds.filter((id) => id !== 'global')
   if (ids.length === 0) return
-  await db.deleteFrom('agent_settings').where('channel_id', 'in', ids).execute()
+  await db.deleteFrom('channel_settings').where('channel_id', 'in', ids).execute()
 }

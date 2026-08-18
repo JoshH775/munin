@@ -5,6 +5,8 @@
 
 import type { ColumnType } from "kysely";
 
+export type EffortLevel = "high" | "low" | "max" | "medium" | "xhigh";
+
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
@@ -16,9 +18,10 @@ export interface _Migrations {
   name: string;
 }
 
-export interface AgentSettings {
+export interface ChannelSettings {
   channel_id: string;
   created_at: Generated<Timestamp>;
+  effort: EffortLevel | null;
   memory: Generated<string>;
   model: string | null;
   system_prompt: string | null;
@@ -38,6 +41,6 @@ export interface Messages {
 
 export interface DB {
   _migrations: _Migrations;
-  agent_settings: AgentSettings;
+  channel_settings: ChannelSettings;
   messages: Messages;
 }

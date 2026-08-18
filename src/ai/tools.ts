@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { makeTool } from './makeTool'
-import { updateMemory } from '../repositories/agentSettings'
+import { updateMemory } from '../repositories/channelSettings'
 
 export function updateMemoryTool(channelId: string, parentChannelId: string | null) {
   const isThread = parentChannelId !== null
