@@ -10,6 +10,7 @@ import { turn } from '../ai'
 import { deleteSettings, resolveSettings } from '../repositories/agentSettings'
 import { getAllThreads } from './threads'
 import { log } from '../logger'
+import { updateMemoryTool } from '../ai/tools'
 
 const token = process.env.DISCORD_BOT_TOKEN
 if (!token) {
@@ -56,7 +57,9 @@ client.on(Events.MessageCreate, async (message) => {
         ? [...transcript, { role: 'user' as const, content: `<memory>\n${settings.memory}\n</memory>` }]
         : transcript,
       model: settings.model,
-      system: settings.persona
+      system: settings.persona,
+      onToolUse: (t) => message.channel.send(`**Tool used: ${t}**`),
+      tools: [updateMemoryTool(channelId, parentChannelId)]
     })
 
     const sent = await message.channel.send(result.text)
