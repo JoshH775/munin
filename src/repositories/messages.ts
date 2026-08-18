@@ -17,20 +17,22 @@ export async function deleteMessages(ids: string[]): Promise<void> {
   await db.deleteFrom('messages').where('id', 'in', ids).execute()
 }
 
+export async function deleteChannelMessages(channelId: string): Promise<void> {
+  await db.deleteFrom('messages').where('channel_id', '=', channelId).execute()
+}
 
-export async function getRecentMessages({
+
+export async function getConversation({
   channelId,
-  threadId,
-  limit = 50,
 }: {
   channelId: string
-  threadId: string | null
-  limit?: number
 }): Promise<Selectable<Messages>[]> {
-  let query = db.selectFrom('messages').selectAll().where('channel_id', '=', channelId)
-  query = threadId === null ? query.where('thread_id', 'is', null) : query.where('thread_id', '=', threadId)
-  const rows = await query.orderBy('sent_at', 'desc').limit(limit).execute()
-  return rows.reverse() // oldest-first for prompt building
+  return db
+    .selectFrom('messages')
+    .selectAll()
+    .where('channel_id', '=', channelId)
+    .orderBy('sent_at', 'asc')
+    .execute()
 }
 
 export async function getMessagesSince({
@@ -51,18 +53,15 @@ export async function getMessagesSince({
 
 
 export function toChatTranscript(
-  messages: Selectable<Messages>[]
+  messages: Selectable<Messages>[],
+  botUserId: string
 ): Anthropic.MessageParam[] {
-  const botUserId = process.env.DISCORD_BOT_ID
-  if (!botUserId) {
-    throw new Error('DISCORD_BOT_ID not set in env')
-  }
   const params = messages
     .filter((m) => m.content.trim()) // drop contentless messages (attachments, embeds, system events)
     .map(
       (m): Anthropic.MessageParam => ({
         role: m.user_id === botUserId ? 'assistant' : 'user',
-        content: m.content,
+        content: `[${new Date(m.sent_at).toISOString().slice(0, 16).replace('T', ' ')} UTC] ${m.content}`,
       })
     )
   const firstUser = params.findIndex((p) => p.role === 'user')
