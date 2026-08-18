@@ -1,7 +1,14 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import Anthropic from '@anthropic-ai/sdk'
 import { sql } from 'kysely'
 import { db } from '../db'
 import { models } from '../ai/models'
+
+const globalPersona = readFileSync(
+  fileURLToPath(new URL('../../system.md', import.meta.url)),
+  'utf8'
+).trim()
 
 export type AgentSettings = {
   channelId: string
@@ -38,7 +45,7 @@ export async function resolveSettings(
     channelId,
     parentChannelId,
     model: own?.model ?? parent?.model ?? global.model ?? models.sonnet5,
-    persona: [global.system_prompt, parent?.system_prompt, own?.system_prompt]
+    persona: [globalPersona, parent?.system_prompt, own?.system_prompt]
       .filter(Boolean)
       .join('\n\n'),
     memory: [
