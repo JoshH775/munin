@@ -1,7 +1,7 @@
 import { ChannelType, Client, Events, GatewayIntentBits } from 'discord.js'
 import {
   deleteMessages,
-  getRecentMessages,
+  getConversation,
   insertMessage,
   toChatTranscript
 } from '../repositories/messages'
@@ -10,8 +10,7 @@ import { resolveSettings } from '../repositories/agentSettings'
 import { log } from '../logger'
 
 const token = process.env.DISCORD_BOT_TOKEN
-const botId = process.env.DISCORD_BOT_ID
-if (!token || !botId) {
+if (!token) {
   throw Error('Discord bot env vars not setup properly')
 }
 
@@ -26,7 +25,7 @@ const client = new Client({
 client.login(token)
 
 client.on(Events.MessageCreate, async (message) => {
-  if (message.author.id === botId) return
+  if (message.author.id === client.user?.id) return
   const channelId =
     message.channel.isThread() && message.channel.parentId
       ? message.channel.parentId
@@ -47,13 +46,13 @@ client.on(Events.MessageCreate, async (message) => {
     })
 
     const [history, settings] = await Promise.all([
-      getRecentMessages({ channelId, threadId }),
+      getConversation({ channelId, threadId }),
       resolveSettings(channelId)
     ])
 
     message.channel.sendTyping()
     const result = await turn({
-      messages: toChatTranscript(history),
+      messages: toChatTranscript(history, client.user!.id),
       model: settings.model,
       system: settings.persona
     })
@@ -62,7 +61,7 @@ client.on(Events.MessageCreate, async (message) => {
     insertMessage({
       channel_id: channelId,
       content: result.text,
-      user_id: botId,
+      user_id: client.user!.id,
       thread_id: threadId,
       user_name: 'munin',
       id: sent.id,
