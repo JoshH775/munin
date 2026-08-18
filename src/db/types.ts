@@ -30,8 +30,8 @@ export interface Messages {
   content: string;
   created_at: Generated<Timestamp>;
   id: string;
+  parent_channel_id: string | null;
   sent_at: Timestamp;
-  thread_id: string | null;
   user_id: string;
   user_name: string;
 }
