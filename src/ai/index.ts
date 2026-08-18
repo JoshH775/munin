@@ -65,7 +65,6 @@ export async function turn(params: TurnParams): Promise<{
         ...(systemSuffix ? [{ type: 'text' as const, text: systemSuffix }] : []),
       ],
       tools: definitions,
-      cache_control: { type: 'ephemeral' },
       ...(effort && { output_config: { effort } }),
     })
     const response = await stream.finalMessage()
