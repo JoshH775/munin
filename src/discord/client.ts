@@ -1,12 +1,14 @@
 import { ChannelType, Client, Events, GatewayIntentBits } from 'discord.js'
 import {
+  deleteChannelMessages,
   deleteMessages,
   getConversation,
   insertMessage,
   toChatTranscript
 } from '../repositories/messages'
 import { turn } from '../ai'
-import { resolveSettings } from '../repositories/agentSettings'
+import { deleteSettings, resolveSettings } from '../repositories/agentSettings'
+import { getAllThreads } from './threads'
 import { log } from '../logger'
 
 const token = process.env.DISCORD_BOT_TOKEN
@@ -26,33 +28,33 @@ client.login(token)
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.id === client.user?.id) return
-  const channelId =
-    message.channel.isThread() && message.channel.parentId
-      ? message.channel.parentId
-      : message.channelId
-  const threadId = message.channel.isThread() ? message.channelId : null
+  const channelId = message.channelId
+  const parentChannelId = message.channel.isThread() ? message.channel.parentId : null
 
   try {
-    log.info({ channelId, threadId, user: message.author.username }, 'message received')
+    log.info({ channelId, parentChannelId, user: message.author.username }, 'message received')
 
     await insertMessage({
       channel_id: channelId,
+      parent_channel_id: parentChannelId,
       content: message.content,
       user_id: message.author.id,
       user_name: message.author.username,
-      thread_id: threadId,
       id: message.id,
       sent_at: message.createdAt
     })
 
     const [history, settings] = await Promise.all([
-      getConversation({ channelId, threadId }),
-      resolveSettings(channelId)
+      getConversation({ channelId }),
+      resolveSettings(channelId, parentChannelId)
     ])
 
     message.channel.sendTyping()
+    const transcript = toChatTranscript(history, client.user!.id)
     const result = await turn({
-      messages: toChatTranscript(history, client.user!.id),
+      messages: settings.memory.trim()
+        ? [...transcript, { role: 'user' as const, content: `<memory>\n${settings.memory}\n</memory>` }]
+        : transcript,
       model: settings.model,
       system: settings.persona
     })
@@ -60,16 +62,16 @@ client.on(Events.MessageCreate, async (message) => {
     const sent = await message.channel.send(result.text)
     insertMessage({
       channel_id: channelId,
+      parent_channel_id: parentChannelId,
       content: result.text,
       user_id: client.user!.id,
-      thread_id: threadId,
       user_name: 'munin',
       id: sent.id,
       sent_at: sent.createdAt
     })
-    log.info({ channelId, threadId, chars: result.text.length }, 'replied')
+    log.info({ channelId, parentChannelId, chars: result.text.length }, 'replied')
   } catch (err) {
-    log.error({ err, channelId, threadId }, 'failed to handle message')
+    log.error({ err, channelId, parentChannelId }, 'failed to handle message')
   }
 })
 
@@ -83,6 +85,18 @@ client.on(Events.MessageBulkDelete, (messages) => {
   deleteMessages([...messages.keys()])
 })
 
+client.on(Events.ThreadDelete, async (thread) => {
+  log.info({ threadId: thread.id }, 'thread deleted')
+  await deleteChannelMessages(thread.id)
+  await deleteSettings([thread.id])
+})
+
+client.on(Events.ChannelDelete, async (channel) => {
+  log.info({ channelId: channel.id }, 'channel deleted')
+  await deleteChannelMessages(channel.id)
+  await deleteSettings([channel.id])
+})
+
 client.once(Events.ClientReady, async (c) => {
   log.info({ tag: c.user.tag }, 'logged in')
   log.info('backfilling messages')
@@ -92,10 +106,7 @@ client.once(Events.ClientReady, async (c) => {
   let threadCount = 0
   let guildCount = 0
   for (const guild of client.guilds.cache.values()) {
-    const [channels, active] = await Promise.all([
-      guild.channels.fetch(),
-      guild.channels.fetchActiveThreads()
-    ])
+    const channels = await guild.channels.fetch()
 
     for (const channel of channels.values()) {
       if (!channel || !channel.isTextBased() || channel.isThread()) continue
@@ -104,11 +115,11 @@ client.once(Events.ClientReady, async (c) => {
         inserts.push(
           insertMessage({
             channel_id: channel.id,
+            parent_channel_id: null,
             content: message.content,
             user_name: message.author.username,
             user_id: message.author.id,
             id: message.id,
-            thread_id: null,
             sent_at: message.createdAt
           })
         )
@@ -116,18 +127,19 @@ client.once(Events.ClientReady, async (c) => {
       channelCount++
     }
 
-    for (const thread of active.threads.values()) {
-      if (!thread || !thread.isTextBased() || !thread.parentId) continue
-      const messages = await thread.messages.fetch({ limit: 100 })
+    for (const thread of await getAllThreads(guild)) {
+      if (!thread.parentId) continue
+      const messages = await thread.messages.fetch({ limit: 100 }).catch(() => null)
+      if (!messages) continue
       for (const message of messages.values()) {
         inserts.push(
           insertMessage({
-            channel_id: thread.parentId,
+            channel_id: thread.id,
+            parent_channel_id: thread.parentId,
             content: message.content,
             user_name: message.author.username,
             user_id: message.author.id,
             id: message.id,
-            thread_id: thread.id,
             sent_at: message.createdAt
           })
         )
