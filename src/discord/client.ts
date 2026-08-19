@@ -7,10 +7,12 @@ import {
   toChatTranscript
 } from '../repositories/messages'
 import { turn } from '../ai'
-import { deleteSettings, resolveSettings } from '../repositories/agentSettings'
+import { deleteSettings, resolveSettings } from '../repositories/channelSettings'
 import { getAllThreads } from './threads'
 import { log } from '../logger'
 import { updateMemoryTool } from '../ai/tools'
+import { handleConfigInteraction, registerCommands } from './commands'
+import { match } from 'ts-pattern'
 
 const token = process.env.DISCORD_BOT_TOKEN
 if (!token) {
@@ -27,8 +29,18 @@ const client = new Client({
 
 client.login(token)
 
+let ready = false
+
+const toolVerbs: Record<string, string> = {
+  update_memory: 'updating memory'
+}
+
+const TOOL_NOTE_MARKER = '\u200b'
+
 client.on(Events.MessageCreate, async (message) => {
+  if (!ready) return
   if (message.author.id === client.user?.id) return
+  if (message.system) return // ignore discord system notices (thread created, pins, joins, …)
   const channelId = message.channelId
   const parentChannelId = message.channel.isThread() ? message.channel.parentId : null
 
@@ -50,29 +62,37 @@ client.on(Events.MessageCreate, async (message) => {
       resolveSettings(channelId, parentChannelId)
     ])
 
-    message.channel.sendTyping()
     const transcript = toChatTranscript(history, client.user!.id)
-    const result = await turn({
+    await turn({
       messages: settings.memory.trim()
         ? [...transcript, { role: 'user' as const, content: `<memory>\n${settings.memory}\n</memory>` }]
         : transcript,
       model: settings.model,
+      effort: settings.effort,
       system: settings.persona,
-      onToolUse: (t) => message.channel.send(`**Tool used: ${t}**`),
+      onRoundStart: () => {
+        message.channel.sendTyping().catch(() => {})
+      },
+      onText: async (text) => {
+        const sent = await message.channel.send(text)
+        await insertMessage({
+          channel_id: channelId,
+          parent_channel_id: parentChannelId,
+          content: text,
+          user_id: client.user!.id,
+          user_name: 'munin',
+          id: sent.id,
+          sent_at: sent.createdAt
+        })
+      },
+      onToolUse: async (t) => {
+        const label = toolVerbs[t] ?? t.replace(/_/g, ' ')
+        await message.channel.send(`-# *${label}…*${TOOL_NOTE_MARKER}`).catch(() => {})
+      },
       tools: [updateMemoryTool(channelId, parentChannelId)]
     })
 
-    const sent = await message.channel.send(result.text)
-    insertMessage({
-      channel_id: channelId,
-      parent_channel_id: parentChannelId,
-      content: result.text,
-      user_id: client.user!.id,
-      user_name: 'munin',
-      id: sent.id,
-      sent_at: sent.createdAt
-    })
-    log.info({ channelId, parentChannelId, chars: result.text.length }, 'replied')
+    log.info({ channelId, parentChannelId }, 'replied')
   } catch (err) {
     log.error({ err, channelId, parentChannelId }, 'failed to handle message')
   }
@@ -100,8 +120,30 @@ client.on(Events.ChannelDelete, async (channel) => {
   await deleteSettings([channel.id])
 })
 
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return
+  try {
+    await match(interaction.commandName)
+      .with('config', () => handleConfigInteraction(interaction))
+      .otherwise(async () => {})
+  } catch (err) {
+    log.error({ err, command: interaction.commandName }, 'interaction failed')
+  }
+})
+
 client.once(Events.ClientReady, async (c) => {
   log.info({ tag: c.user.tag }, 'logged in')
+  try {
+    await registerCommands(client)
+    await backfill()
+    ready = true
+  } catch (err) {
+    log.fatal({ err }, 'startup failed, exiting')
+    process.exit(1)
+  }
+})
+
+async function backfill(): Promise<void> {
   log.info('backfilling messages')
   const start = Date.now()
   const inserts: Promise<void>[] = []
@@ -115,6 +157,7 @@ client.once(Events.ClientReady, async (c) => {
       if (!channel || !channel.isTextBased() || channel.isThread()) continue
       const messages = await channel.messages.fetch({ limit: 100 })
       for (const message of messages.values()) {
+        if (message.system || message.content.includes(TOOL_NOTE_MARKER)) continue
         inserts.push(
           insertMessage({
             channel_id: channel.id,
@@ -135,6 +178,7 @@ client.once(Events.ClientReady, async (c) => {
       const messages = await thread.messages.fetch({ limit: 100 }).catch(() => null)
       if (!messages) continue
       for (const message of messages.values()) {
+        if (message.system || message.content.includes(TOOL_NOTE_MARKER)) continue
         inserts.push(
           insertMessage({
             channel_id: thread.id,
@@ -164,4 +208,4 @@ client.once(Events.ClientReady, async (c) => {
     },
     'backfill complete'
   )
-})
+}
