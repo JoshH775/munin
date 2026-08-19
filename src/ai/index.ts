@@ -18,11 +18,11 @@ export type TurnParams = {
   maxTokens?: number
   effort?: Effort
   onRoundStart?: () => void
-  onToolUse?: (name: string) => void
+  onToolUse?: (name: string) => void | Promise<void>
+  onText?: (text: string) => void | Promise<void>
 }
 
 export async function turn(params: TurnParams): Promise<{
-  text: string
   messages: Anthropic.MessageParam[]
   ended: boolean
 }> {
@@ -30,6 +30,7 @@ export async function turn(params: TurnParams): Promise<{
     messages,
     tools = [],
     onToolUse,
+    onText,
     onRoundStart,
     model,
     maxTokens = 1024,
@@ -78,13 +79,14 @@ export async function turn(params: TurnParams): Promise<{
 
     conversation.push({ role: 'assistant', content: response.content })
     const text = response.content.find((part) => part.type === 'text')?.text ?? ''
+    if (text) await onText?.(text)
 
     if (response.stop_reason === 'pause_turn') {
       continue
     }
 
     if (response.stop_reason !== 'tool_use') {
-      return { text, messages: conversation, ended: false }
+      return { messages: conversation, ended: false }
     }
 
     const results: Anthropic.ToolResultBlockParam[] = []
@@ -93,7 +95,7 @@ export async function turn(params: TurnParams): Promise<{
       await match(part)
         .with({ type: 'tool_use' }, async (p) => {
           const { name, input, id } = p
-          onToolUse?.(name)
+          await onToolUse?.(name)
           try {
             results.push({
               type: 'tool_result',
@@ -116,11 +118,10 @@ export async function turn(params: TurnParams): Promise<{
 
     conversation.push({ role: 'user', content: results })
 
-    if (ended) return { text, ended: true, messages: conversation }
+    if (ended) return { ended: true, messages: conversation }
   }
 
   return {
-    text: 'Tool round limit reached.',
     ended: false,
     messages: conversation,
   }
