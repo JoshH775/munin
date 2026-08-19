@@ -4,7 +4,7 @@ A personal second brain: a Discord bot on a private server for life stuff — me
 
 ## Architecture
 
-- Channel = life domain (#cooking, #goals). `agent_settings` holds one row per channel: `memory` (a living document the model rewrites in place, not a log), `system_prompt`, `model`. The reserved `'global'` row carries the persona, global memory, and default model. Missing row or null column means defaults, so a new channel works with zero setup. Messages in threads resolve to the parent channel's row.
+- Channel = life domain (#cooking, #goals). `channel_settings` holds one row per channel: `memory` (a living document the model rewrites in place, not a log), `system_prompt`, `model`, `effort`. The persona lives in `system.md` (read at startup), not the DB. The reserved `'global'` row carries global memory and the default model and effort. A missing row or null column inherits (parent channel, then the global row), so a new channel works with zero setup. Messages in threads resolve to the parent channel's row.
 - Prompts and memory are runtime-mutable state, so they live in the DB, never in the repo.
 - `src/ai/index.ts` `turn()` is the agentic loop: one user message in, rounds of tool calls, one final text out. Tools are `makeTool()` objects; a `terminal` tool ends the turn.
 - SQL-first migrations: plain `.sql` files in `src/db/migrations` (create via `pnpm db:migration <name>`), applied by `scripts/migrate.ts` against whatever `DATABASE_URL` the local `.env` supplies. Only `db:reset` runs the seed.
@@ -17,4 +17,4 @@ Same VPS, separated by directory. This checkout is dev: Postgres on 5434 from `d
 ## Conventions
 
 - tsx runs everything; imports are extensionless (bundler resolution), so plain `node` cannot run this code.
-- Chat defaults to Sonnet 5 at low effort; per-channel `model` overrides apply to chat only, and scheduled jobs stay on Sonnet regardless.
+- Chat model and effort default to the global row's values (Sonnet 5, medium effort); per-channel `model`/`effort` overrides apply to chat only, and scheduled jobs stay on Sonnet regardless.
