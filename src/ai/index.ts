@@ -15,10 +15,13 @@ export type TurnParams = {
   systemSuffix?: string
   model: Anthropic.Model
   tools?: Tool<any>[]
+  serverTools?: Anthropic.MessageCreateParams['tools']
   maxTokens?: number
   effort?: Effort
   onRoundStart?: () => void
-  onToolUse?: (name: string) => void | Promise<void>
+  onToolUse?: (
+    tool: Anthropic.ToolUseBlock | Anthropic.ServerToolUseBlock
+  ) => void | Promise<void>
   onText?: (text: string) => void | Promise<void>
 }
 
@@ -29,11 +32,12 @@ export async function turn(params: TurnParams): Promise<{
   const {
     messages,
     tools = [],
+    serverTools,
     onToolUse,
     onText,
     onRoundStart,
     model,
-    maxTokens = 1024,
+    maxTokens = 4096,
     effort,
     system,
     systemSuffix,
@@ -68,44 +72,33 @@ export async function turn(params: TurnParams): Promise<{
         },
         ...(systemSuffix ? [{ type: 'text' as const, text: systemSuffix }] : []),
       ],
-      tools: definitions,
+      tools: [...definitions, ...(serverTools ?? [])],
       ...(effort && { output_config: { effort } }),
     })
     const response = await stream.finalMessage()
 
-    if (response.stop_reason === 'max_tokens') {
-      console.warn(`[turn] hit max_tokens (${maxTokens}) - output truncated`)
-    }
-
     conversation.push({ role: 'assistant', content: response.content })
-    const text = response.content.find((part) => part.type === 'text')?.text ?? ''
-    if (text) await onText?.(text)
-
-    if (response.stop_reason === 'pause_turn') {
-      continue
-    }
-
-    if (response.stop_reason !== 'tool_use') {
-      return { messages: conversation, ended: false }
-    }
 
     const results: Anthropic.ToolResultBlockParam[] = []
 
     for (const part of response.content) {
       await match(part)
+        // server tools (web search, …) ran server-side already; just surface them
+        .with({ type: 'server_tool_use' }, async (p) => {
+          await onToolUse?.(p)
+        })
         .with({ type: 'tool_use' }, async (p) => {
-          const { name, input, id } = p
-          await onToolUse?.(name)
+          await onToolUse?.(p)
           try {
             results.push({
               type: 'tool_result',
-              tool_use_id: id,
-              content: await run(name, input),
+              tool_use_id: p.id,
+              content: await run(p.name, p.input),
             })
           } catch (err) {
             results.push({
               type: 'tool_result',
-              tool_use_id: id,
+              tool_use_id: p.id,
               content: String(err),
               is_error: true,
             })
@@ -114,6 +107,22 @@ export async function turn(params: TurnParams): Promise<{
         .otherwise(() => {
           // ignore other types
         })
+    }
+
+    
+    const text = response.content
+      .flatMap((part) => (part.type === 'text' ? [part.text] : []))
+      .join('')
+    if (text) await onText?.(text)
+
+    if (response.stop_reason === 'pause_turn') continue
+
+    if (response.stop_reason === 'max_tokens') {
+      console.warn(`[turn] hit max_tokens (${maxTokens}) - output truncated`)
+    }
+
+    if (response.stop_reason !== 'tool_use') {
+      return { messages: conversation, ended: false }
     }
 
     conversation.push({ role: 'user', content: results })

@@ -31,10 +31,6 @@ client.login(token)
 
 let ready = false
 
-const toolVerbs: Record<string, string> = {
-  update_memory: 'updating memory'
-}
-
 const TOOL_NOTE_MARKER = '\u200b'
 
 client.on(Events.MessageCreate, async (message) => {
@@ -85,11 +81,16 @@ client.on(Events.MessageCreate, async (message) => {
           sent_at: sent.createdAt
         })
       },
-      onToolUse: async (t) => {
-        const label = toolVerbs[t] ?? t.replace(/_/g, ' ')
-        await message.channel.send(`-# *${label}…*${TOOL_NOTE_MARKER}`).catch(() => {})
+      onToolUse: async (tool) => {
+        const input = JSON.stringify(tool.input)
+        await message.channel
+          .send(
+            `-# Tool used: ${tool.name}(${input.length > 200 ? `${input.slice(0, 200)}…` : input})${TOOL_NOTE_MARKER}`
+          )
+          .catch(() => {})
       },
-      tools: [updateMemoryTool(channelId, parentChannelId)]
+      tools: [updateMemoryTool(channelId, parentChannelId)],
+      serverTools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]
     })
 
     log.info({ channelId, parentChannelId }, 'replied')
