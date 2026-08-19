@@ -65,5 +65,10 @@ export function toChatTranscript(
       })
     )
   const firstUser = params.findIndex((p) => p.role === 'user')
-  return firstUser === -1 ? [] : params.slice(firstUser)
+  const transcript = firstUser === -1 ? [] : params.slice(firstUser)
+  const last = transcript.at(-1)
+  if (last && typeof last.content === 'string') {
+    last.content = [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }]
+  }
+  return transcript
 }
