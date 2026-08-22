@@ -10,7 +10,7 @@ import { turn } from '../ai'
 import { deleteSettings, resolveSettings } from '../repositories/channelSettings'
 import { getAllThreads } from './threads'
 import { log } from '../logger'
-import { startWorkTool, tavilySearchTool, updateMemoryTool } from '../ai/tools'
+import { startWorkTool, tavilyExtractTool, tavilySearchTool, updateMemoryTool } from '../ai/tools'
 import { handleConfigInteraction, registerCommands } from './commands'
 import { match } from 'ts-pattern'
 
@@ -115,7 +115,8 @@ client.on(Events.MessageCreate, async (message) => {
       tools: [
         updateMemoryTool(channelId, parentChannelId),
         startWorkTool(channelName),
-        tavilySearchTool()
+        tavilySearchTool(),
+        tavilyExtractTool()
       ]
     })
 
