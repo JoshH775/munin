@@ -81,9 +81,17 @@ export async function turn(params: TurnParams): Promise<{
 
     const results: Anthropic.ToolResultBlockParam[] = []
 
+    // one message per utterance: a text block adds to the reply, anything else sends it
+    let said = ''
     for (const part of response.content) {
+      if (part.type !== 'text' && said) {
+        await onText?.(said)
+        said = ''
+      }
       await match(part)
-        // server tools (web search, …) ran server-side already; just surface them
+        .with({ type: 'text' }, (p) => {
+          said += p.text
+        })
         .with({ type: 'server_tool_use' }, async (p) => {
           await onToolUse?.(p)
         })
@@ -104,16 +112,9 @@ export async function turn(params: TurnParams): Promise<{
             })
           }
         })
-        .otherwise(() => {
-          // ignore other types
-        })
+        .otherwise(() => {})
     }
-
-    
-    const text = response.content
-      .flatMap((part) => (part.type === 'text' ? [part.text] : []))
-      .join('')
-    if (text) await onText?.(text)
+    if (said) await onText?.(said)
 
     if (response.stop_reason === 'pause_turn') continue
 
