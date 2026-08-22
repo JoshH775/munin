@@ -15,13 +15,10 @@ export type TurnParams = {
   systemSuffix?: string
   model: Anthropic.Model
   tools?: Tool<any>[]
-  serverTools?: Anthropic.MessageCreateParams['tools']
   maxTokens?: number
   effort?: Effort
   onRoundStart?: () => void
-  onToolUse?: (
-    tool: Anthropic.ToolUseBlock | Anthropic.ServerToolUseBlock
-  ) => void | Promise<void>
+  onToolUse?: (tool: Anthropic.ToolUseBlock) => void | Promise<void>
   onText?: (text: string) => void | Promise<void>
 }
 
@@ -32,7 +29,6 @@ export async function turn(params: TurnParams): Promise<{
   const {
     messages,
     tools = [],
-    serverTools,
     onToolUse,
     onText,
     onRoundStart,
@@ -72,7 +68,7 @@ export async function turn(params: TurnParams): Promise<{
         },
         ...(systemSuffix ? [{ type: 'text' as const, text: systemSuffix }] : []),
       ],
-      tools: [...definitions, ...(serverTools ?? [])],
+      tools: definitions,
       ...(effort && { output_config: { effort } }),
     })
     const response = await stream.finalMessage()
@@ -91,9 +87,6 @@ export async function turn(params: TurnParams): Promise<{
       await match(part)
         .with({ type: 'text' }, (p) => {
           said += p.text
-        })
-        .with({ type: 'server_tool_use' }, async (p) => {
-          await onToolUse?.(p)
         })
         .with({ type: 'tool_use' }, async (p) => {
           await onToolUse?.(p)
