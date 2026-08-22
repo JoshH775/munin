@@ -10,7 +10,7 @@ import { turn } from '../ai'
 import { deleteSettings, resolveSettings } from '../repositories/channelSettings'
 import { getAllThreads } from './threads'
 import { log } from '../logger'
-import { updateMemoryTool } from '../ai/tools'
+import { startWorkTool, tavilySearchTool, updateMemoryTool } from '../ai/tools'
 import { handleConfigInteraction, registerCommands } from './commands'
 import { match } from 'ts-pattern'
 
@@ -31,7 +31,19 @@ client.login(token)
 
 let ready = false
 
-const TOOL_NOTE_MARKER = '\u200b'
+// Discord caps messages at 2000 chars; split long replies, preferring a line break.
+function splitForDiscord(text: string): string[] {
+  const parts: string[] = []
+  let rest = text
+  while (rest.length > 2000) {
+    let cut = rest.lastIndexOf('\n', 2000)
+    if (cut <= 0) cut = 2000
+    parts.push(rest.slice(0, cut))
+    rest = rest.slice(cut).replace(/^\n/, '')
+  }
+  if (rest) parts.push(rest)
+  return parts
+}
 
 client.on(Events.MessageCreate, async (message) => {
   if (!ready) return
@@ -39,6 +51,7 @@ client.on(Events.MessageCreate, async (message) => {
   if (message.system) return // ignore discord system notices (thread created, pins, joins, …)
   const channelId = message.channelId
   const parentChannelId = message.channel.isThread() ? message.channel.parentId : null
+  const channelName = 'name' in message.channel ? message.channel.name : channelId
 
   try {
     log.info({ channelId, parentChannelId, user: message.author.username }, 'message received')
@@ -70,27 +83,40 @@ client.on(Events.MessageCreate, async (message) => {
         message.channel.sendTyping().catch(() => {})
       },
       onText: async (text) => {
-        const sent = await message.channel.send(text)
-        await insertMessage({
-          channel_id: channelId,
-          parent_channel_id: parentChannelId,
-          content: text,
-          user_id: client.user!.id,
-          user_name: 'munin',
-          id: sent.id,
-          sent_at: sent.createdAt
-        })
+        for (const part of splitForDiscord(text)) {
+          const sent = await message.channel.send(part)
+          await insertMessage({
+            channel_id: channelId,
+            parent_channel_id: parentChannelId,
+            content: part,
+            user_id: client.user!.id,
+            user_name: 'munin',
+            id: sent.id,
+            sent_at: sent.createdAt
+          })
+        }
       },
       onToolUse: async (tool) => {
-        const input = JSON.stringify(tool.input)
-        await message.channel
-          .send(
-            `-# Tool used: ${tool.name}(${input.length > 200 ? `${input.slice(0, 200)}…` : input})${TOOL_NOTE_MARKER}`
-          )
-          .catch(() => {})
+        const full = `Tool used: ${tool.name}(${JSON.stringify(tool.input)})`
+        const line = full.length > 45 ? `${full.slice(0, 44)}…` : full
+        const sent = await message.channel.send(`-# ${line}`).catch(() => null)
+        if (sent) {
+          await insertMessage({
+            channel_id: channelId,
+            parent_channel_id: parentChannelId,
+            content: full,
+            user_id: client.user!.id,
+            user_name: 'munin',
+            id: sent.id,
+            sent_at: sent.createdAt
+          })
+        }
       },
-      tools: [updateMemoryTool(channelId, parentChannelId)],
-      serverTools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]
+      tools: [
+        updateMemoryTool(channelId, parentChannelId),
+        startWorkTool(channelName),
+        tavilySearchTool()
+      ]
     })
 
     log.info({ channelId, parentChannelId }, 'replied')
@@ -158,7 +184,7 @@ async function backfill(): Promise<void> {
       if (!channel || !channel.isTextBased() || channel.isThread()) continue
       const messages = await channel.messages.fetch({ limit: 100 })
       for (const message of messages.values()) {
-        if (message.system || message.content.includes(TOOL_NOTE_MARKER)) continue
+        if (message.system) continue
         inserts.push(
           insertMessage({
             channel_id: channel.id,
@@ -179,7 +205,7 @@ async function backfill(): Promise<void> {
       const messages = await thread.messages.fetch({ limit: 100 }).catch(() => null)
       if (!messages) continue
       for (const message of messages.values()) {
-        if (message.system || message.content.includes(TOOL_NOTE_MARKER)) continue
+        if (message.system) continue
         inserts.push(
           insertMessage({
             channel_id: thread.id,
