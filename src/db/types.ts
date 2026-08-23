@@ -11,6 +11,8 @@ export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
 
+export type Int8 = ColumnType<string, bigint | number | string, bigint | number | string>;
+
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface _Migrations {
@@ -39,8 +41,21 @@ export interface Messages {
   user_name: string;
 }
 
+export interface Usage {
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  created_at: Generated<Timestamp>;
+  effort: string;
+  id: Generated<Int8>;
+  in_reply_to: string | null;
+  input_tokens: number;
+  model: string;
+  output_tokens: number;
+}
+
 export interface DB {
   _migrations: _Migrations;
   channel_settings: ChannelSettings;
   messages: Messages;
+  usage: Usage;
 }

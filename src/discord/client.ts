@@ -13,6 +13,7 @@ import { log } from '../logger'
 import { startWorkTool, tavilyExtractTool, tavilySearchTool, updateMemoryTool } from '../ai/tools'
 import { handleConfigInteraction, registerCommands } from './commands'
 import { match } from 'ts-pattern'
+import { insertUsage } from '../repositories/usage'
 
 const token = process.env.DISCORD_BOT_TOKEN
 if (!token) {
@@ -72,7 +73,7 @@ client.on(Events.MessageCreate, async (message) => {
     ])
 
     const transcript = toChatTranscript(history, client.user!.id)
-    await turn({
+    const { usage } = await turn({
       messages: settings.memory.trim()
         ? [...transcript, { role: 'user' as const, content: `<memory>\n${settings.memory}\n</memory>` }]
         : transcript,
@@ -118,6 +119,13 @@ client.on(Events.MessageCreate, async (message) => {
         tavilySearchTool(),
         tavilyExtractTool()
       ]
+    })
+
+    await insertUsage({
+      in_reply_to: message.id,
+      effort: settings.effort,
+      model: settings.model,
+      ...usage
     })
 
     log.info({ channelId, parentChannelId }, 'replied')

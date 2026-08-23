@@ -25,6 +25,12 @@ export type TurnParams = {
 export async function turn(params: TurnParams): Promise<{
   messages: Anthropic.MessageParam[]
   ended: boolean
+  usage: {
+    input_tokens: number
+    output_tokens: number
+    cache_read_input_tokens: number
+    cache_creation_input_tokens: number
+  }
 }> {
   const {
     messages,
@@ -53,6 +59,13 @@ export async function turn(params: TurnParams): Promise<{
 
   const conversation = [...messages]
 
+  let usageTotals = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0
+  }
+
   // rounds are API round trips, not conversational turns
   for (let round = 0; round < 8; round++) {
     onRoundStart?.()
@@ -72,6 +85,11 @@ export async function turn(params: TurnParams): Promise<{
       ...(effort && { output_config: { effort } }),
     })
     const response = await stream.finalMessage()
+
+    usageTotals.input_tokens = usageTotals.input_tokens + response.usage.input_tokens
+    usageTotals.output_tokens = usageTotals.output_tokens + response.usage.output_tokens
+    usageTotals.cache_read_input_tokens = usageTotals.cache_read_input_tokens + (response.usage.cache_read_input_tokens ?? 0)
+    usageTotals.cache_creation_input_tokens = usageTotals.cache_creation_input_tokens + (response.usage.cache_creation_input_tokens ?? 0)
 
     conversation.push({ role: 'assistant', content: response.content })
 
@@ -116,17 +134,18 @@ export async function turn(params: TurnParams): Promise<{
     }
 
     if (response.stop_reason !== 'tool_use') {
-      return { messages: conversation, ended: false }
+      return { messages: conversation, ended: false, usage: usageTotals }
     }
 
     conversation.push({ role: 'user', content: results })
 
-    if (ended) return { ended: true, messages: conversation }
+    if (ended) return { ended: true, messages: conversation, usage: usageTotals }
   }
 
   return {
     ended: false,
     messages: conversation,
+    usage: usageTotals
   }
 }
 
