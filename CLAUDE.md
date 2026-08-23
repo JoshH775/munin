@@ -17,4 +17,4 @@ Same VPS, separated by directory. This checkout is dev: Postgres on 5434 from `d
 ## Conventions
 
 - tsx runs everything; imports are extensionless (bundler resolution), so plain `node` cannot run this code.
-- Chat model and effort default to the global row's values (Sonnet 5, medium effort); per-channel `model`/`effort` overrides apply to chat only, and scheduled jobs stay on Sonnet regardless.
+- Chat model and effort default to the global row's values (Kimi K2.6 on DeepInfra, high effort); per-channel `model`/`effort` overrides apply to chat only, and scheduled jobs stay on Sonnet regardless.
