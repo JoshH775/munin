@@ -3,7 +3,20 @@ import Anthropic from '@anthropic-ai/sdk'
 import { match } from 'ts-pattern'
 import type { Tool } from './makeTool'
 
-const claude = new Anthropic()
+function clientFor(model: string) {
+  if (model.toLowerCase().includes('claude')) {
+    const key = process.env.ANTHROPIC_API_KEY
+    if (!key) throw new Error('Anthropic API key not set.')
+    return new Anthropic()
+  } else {
+    const key = process.env.DEEPINFRA_API_KEY
+    if (!key) throw new Error('DeepInfra API key not set.')
+    return new Anthropic({
+      apiKey: key,
+      baseURL: 'https://api.deepinfra.com/anthropic'
+    })
+  }
+}
 
 export const efforts = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type Effort = (typeof efforts)[number]
@@ -13,7 +26,7 @@ export type TurnParams = {
   system: string | (() => string)
   // per-run/per-user text that sits after the cached static system block
   systemSuffix?: string
-  model: Anthropic.Model
+  model: string
   tools?: Tool<any>[]
   maxTokens?: number
   effort?: Effort
@@ -42,13 +55,15 @@ export async function turn(params: TurnParams): Promise<{
     maxTokens = 4096,
     effort,
     system,
-    systemSuffix,
+    systemSuffix
   } = params
   const definitions = tools.map((t) => t.definition)
 
   let ended = false
 
-  const run = async (name: string, input: any) => {
+  const client = clientFor(model)
+
+  const run = async (name: string, input: unknown) => {
     const tool = tools.find((t) => t.definition.name === name)
     if (!tool) throw new Error(`Tool not found: ${name}`)
     const content = await tool.run(input)
@@ -69,7 +84,7 @@ export async function turn(params: TurnParams): Promise<{
   // rounds are API round trips, not conversational turns
   for (let round = 0; round < 8; round++) {
     onRoundStart?.()
-    const stream = claude.messages.stream({
+    const stream = client.messages.stream({
       max_tokens: maxTokens,
       model: model,
       messages: conversation,
@@ -77,19 +92,25 @@ export async function turn(params: TurnParams): Promise<{
         {
           type: 'text',
           text: system instanceof Function ? system() : system,
-          cache_control: { type: 'ephemeral' },
+          cache_control: { type: 'ephemeral' }
         },
-        ...(systemSuffix ? [{ type: 'text' as const, text: systemSuffix }] : []),
+        ...(systemSuffix ? [{ type: 'text' as const, text: systemSuffix }] : [])
       ],
       tools: definitions,
-      ...(effort && { output_config: { effort } }),
+      ...(effort && { output_config: { effort } })
     })
     const response = await stream.finalMessage()
 
-    usageTotals.input_tokens = usageTotals.input_tokens + response.usage.input_tokens
-    usageTotals.output_tokens = usageTotals.output_tokens + response.usage.output_tokens
-    usageTotals.cache_read_input_tokens = usageTotals.cache_read_input_tokens + (response.usage.cache_read_input_tokens ?? 0)
-    usageTotals.cache_creation_input_tokens = usageTotals.cache_creation_input_tokens + (response.usage.cache_creation_input_tokens ?? 0)
+    usageTotals.input_tokens =
+      usageTotals.input_tokens + response.usage.input_tokens
+    usageTotals.output_tokens =
+      usageTotals.output_tokens + response.usage.output_tokens
+    usageTotals.cache_read_input_tokens =
+      usageTotals.cache_read_input_tokens +
+      (response.usage.cache_read_input_tokens ?? 0)
+    usageTotals.cache_creation_input_tokens =
+      usageTotals.cache_creation_input_tokens +
+      (response.usage.cache_creation_input_tokens ?? 0)
 
     conversation.push({ role: 'assistant', content: response.content })
 
@@ -112,14 +133,14 @@ export async function turn(params: TurnParams): Promise<{
             results.push({
               type: 'tool_result',
               tool_use_id: p.id,
-              content: await run(p.name, p.input),
+              content: await run(p.name, p.input)
             })
           } catch (err) {
             results.push({
               type: 'tool_result',
               tool_use_id: p.id,
               content: String(err),
-              is_error: true,
+              is_error: true
             })
           }
         })
@@ -139,7 +160,8 @@ export async function turn(params: TurnParams): Promise<{
 
     conversation.push({ role: 'user', content: results })
 
-    if (ended) return { ended: true, messages: conversation, usage: usageTotals }
+    if (ended)
+      return { ended: true, messages: conversation, usage: usageTotals }
   }
 
   return {
@@ -150,9 +172,11 @@ export async function turn(params: TurnParams): Promise<{
 }
 
 export async function listModelIds(): Promise<string[]> {
-  const ids: string[] = []
-  for await (const model of claude.models.list({ limit: 1000 })) {
-    if (model.id.startsWith('claude-')) ids.push(model.id)
+  const ids = ['moonshotai/Kimi-K2.6', 'Qwen/Qwen3.5-397B-A17B']
+  if (process.env.ANTHROPIC_API_KEY) {
+    for await (const model of new Anthropic().models.list({ limit: 1000 })) {
+      if (model.id.startsWith('claude-')) ids.push(model.id)
+    }
   }
   return ids
 }
