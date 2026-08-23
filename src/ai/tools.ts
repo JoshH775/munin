@@ -26,8 +26,8 @@ export function tavilySearchTool() {
       if (!tavilyClient) return 'Web search is unavailable: TAVILY_API_KEY is not set.'
       try {
         const { results } = await tavilyClient.search(query, {
-          searchDepth: 'advanced',
-          maxResults: 8
+          searchDepth: 'basic',
+          maxResults: 6
         })
         if (results.length === 0) return `No results for "${query}".`
         return results
