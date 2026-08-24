@@ -22,6 +22,17 @@ export async function deleteChannelMessages(channelId: string): Promise<void> {
 }
 
 
+export async function getLatestMessageId(channelId: string): Promise<string | null> {
+  const row = await db
+    .selectFrom('messages')
+    .select('id')
+    .where('channel_id', '=', channelId)
+    .orderBy('sent_at', 'desc')
+    .limit(1)
+    .executeTakeFirst()
+  return row?.id ?? null
+}
+
 export async function getConversation({
   channelId,
 }: {
@@ -58,10 +69,12 @@ export function toChatTranscript(
 ): Anthropic.MessageParam[] {
   const params = messages
     .filter((m) => m.content.trim()) // drop contentless messages (attachments, embeds, system events)
+    // keep tool-use notes out of the model's context so it can't imitate them as fake tool calls
+    .filter((m) => !(m.user_id === botUserId && m.content.startsWith('Tool used:')))
     .map(
       (m): Anthropic.MessageParam => ({
         role: m.user_id === botUserId ? 'assistant' : 'user',
-        content: `[${new Date(m.sent_at).toISOString().slice(0, 16).replace('T', ' ')} UTC] ${m.content}`,
+        content: m.content,
       })
     )
   const firstUser = params.findIndex((p) => p.role === 'user')
