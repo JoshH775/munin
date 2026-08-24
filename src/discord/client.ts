@@ -1,14 +1,15 @@
-import { ChannelType, Client, Events, GatewayIntentBits } from 'discord.js'
+import { Client, Events, GatewayIntentBits } from 'discord.js'
 import {
   deleteChannelMessages,
   deleteMessages,
   getConversation,
+  getLatestMessageId,
   insertMessage,
   toChatTranscript
 } from '../repositories/messages'
 import { turn } from '../ai'
 import { deleteSettings, resolveSettings } from '../repositories/channelSettings'
-import { getAllThreads } from './threads'
+import { fetchAllMessages, getAllThreads } from './utils'
 import { log } from '../logger'
 import { startWorkTool, tavilyExtractTool, tavilySearchTool, updateMemoryTool } from '../ai/tools'
 import { handleConfigInteraction, registerCommands } from './commands'
@@ -80,6 +81,7 @@ client.on(Events.MessageCreate, async (message) => {
       model: settings.model,
       effort: settings.effort,
       system: settings.persona,
+      systemSuffix: `The current date and time is ${message.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
       onRoundStart: () => {
         message.channel.sendTyping().catch(() => {})
       },
@@ -189,10 +191,11 @@ async function backfill(): Promise<void> {
   for (const guild of client.guilds.cache.values()) {
     const channels = await guild.channels.fetch()
 
-    for (const channel of channels.values()) {
-      if (!channel || !channel.isTextBased() || channel.isThread()) continue
-      const messages = await channel.messages.fetch({ limit: 100 })
-      for (const message of messages.values()) {
+    for (const channel of channels.values().filter((c) => !!c)) {
+      const after = await getLatestMessageId(channel.id)
+      const messages = await fetchAllMessages(channel, after)
+      if (messages.length === 0) continue
+      for (const message of messages) {
         if (message.system) continue
         inserts.push(
           insertMessage({
@@ -211,9 +214,9 @@ async function backfill(): Promise<void> {
 
     for (const thread of await getAllThreads(guild)) {
       if (!thread.parentId) continue
-      const messages = await thread.messages.fetch({ limit: 100 }).catch(() => null)
-      if (!messages) continue
-      for (const message of messages.values()) {
+      const after = await getLatestMessageId(thread.id)
+      const messages = await fetchAllMessages(thread, after)
+      for (const message of messages) {
         if (message.system) continue
         inserts.push(
           insertMessage({
@@ -245,3 +248,4 @@ async function backfill(): Promise<void> {
     'backfill complete'
   )
 }
+
