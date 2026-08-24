@@ -6,6 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch src/discord/client.ts",
+    "start": "tsx src/discord/client.ts",
+    "ship": "bash scripts/deploy.sh",
     "db:migration": "f() { p=\"src/db/migrations/$(date -u +%Y%m%d%H%M%S)_${1:?usage: pnpm db:migration <name>}.sql\"; touch \"$p\"; echo \"$p\"; }; f",
     "db:push": "tsx scripts/migrate.ts push && pnpm db:types",
     "db:reset": "tsx scripts/migrate.ts reset && pnpm db:types",

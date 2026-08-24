@@ -1,0 +1,15 @@
+[Unit]
+Description=munin
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/home/joshuahickey/.local/bin/mise exec -- pnpm start
+WorkingDirectory=/srv/munin
+Environment=TZ=Europe/London
+Restart=always
+User=joshuahickey
+SyslogIdentifier=munin
+
+[Install]
+WantedBy=multi-user.target
