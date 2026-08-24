@@ -63,6 +63,7 @@ cd /srv/munin
 # create /srv/munin/.env with PROD values (DATABASE_URL on :20132)
 pnpm install --frozen-lockfile
 docker compose up -d --wait
+pnpm exec tsx scripts/migrate.ts push   # apply the schema before first start
 sudo systemctl link /srv/munin/munin.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now munin
