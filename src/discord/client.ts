@@ -86,7 +86,14 @@ client.on(Events.MessageCreate, async (message) => {
         message.channel.sendTyping().catch(() => {})
       },
       onText: async (text) => {
-        for (const part of splitForDiscord(text)) {
+        // GLM blank-lines between every line; keep one gap before headers, tighten the rest
+        const tidy = text
+          .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
+          .replace(/\n{2,}/g, '\n') // single-space everything
+          .replace(/([^\n])\n(\*\*[^\n]+\*\*|#{1,6} [^\n]+)$/gm, '$1\n\n$2') // one blank line before a header
+          .trim()
+        if (!tidy) return
+        for (const part of splitForDiscord(tidy)) {
           const sent = await message.channel.send(part)
           await insertMessage({
             channel_id: channelId,
