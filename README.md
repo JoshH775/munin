@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icons/munin-mannaz.png" alt="munin" width="200" />
+</p>
+
 # munin
 
 my second brain. a discord bot on a private server that i talk to about life stuff (projects, habits, things i'm tracking) and it remembers. named after muninn, one of odin's ravens, who flies out over the world every day and reports back.
