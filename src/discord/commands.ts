@@ -6,7 +6,7 @@ import {
   SlashCommandBuilder
 } from 'discord.js'
 import { efforts, listModelIds, type Effort } from '../ai'
-import { resolveSettings, updateConfig } from '../repositories/channelSettings'
+import { resolveSettings, toggleChannelMute, updateConfig } from '../repositories/channelSettings'
 import { log } from '../logger'
 
 const DEFAULT = '__default__' // choice value meaning "clear the override"
@@ -30,13 +30,11 @@ const config = new SlashCommandBuilder()
       .addChoices({ name: 'Default', value: DEFAULT }, ...efforts.map((e) => ({ name: e, value: e })))
   )
 
-const commands = [config]
+const mute = new SlashCommandBuilder().setName("mute").setDescription("Mute or unmute munin in this channel").addBooleanOption((b) => b.setName("everywhere").setDescription("Apply across every channel, not just this one"))
 
-export async function registerCommands(client: Client): Promise<void> {
-  const json = commands.map((c) => c.toJSON())
-  for (const guild of client.guilds.cache.values()) await guild.commands.set(json)
-  log.info({ guilds: client.guilds.cache.size, commands: commands.length }, 'slash commands registered')
-}
+const commands = [config, mute]
+
+
 
 export async function handleConfigInteraction(
   interaction: ChatInputCommandInteraction
@@ -61,4 +59,23 @@ export async function handleConfigInteraction(
       { name: 'Effort', value: `\`${resolved.effort}\``, inline: true }
     )
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
+}
+
+export async function handleMuteInteraction(interaction: ChatInputCommandInteraction) {
+  const everywhere = interaction.options.getBoolean('everywhere')
+  const channelId = everywhere ? 'global' : interaction.channelId
+  const muted = await toggleChannelMute(channelId)
+  const scope = everywhere ? 'everywhere' : 'in this channel'
+  log.info({ channelId, muted }, `munin ${muted ? 'muted' : 'unmuted'} ${scope}`)
+  await interaction.reply({
+    content: `munin ${muted ? 'muted' : 'unmuted'} ${scope}`,
+    flags: MessageFlags.Ephemeral
+  })
+}
+
+
+export async function registerCommands(client: Client): Promise<void> {
+  const json = commands.map((c) => c.toJSON())
+  for (const guild of client.guilds.cache.values()) await guild.commands.set(json)
+  log.info({ guilds: client.guilds.cache.size, commands: commands.length }, 'slash commands registered')
 }

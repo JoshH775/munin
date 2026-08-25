@@ -23,6 +23,7 @@ export interface _Migrations {
 export interface ChannelSettings {
   channel_id: string;
   created_at: Generated<Timestamp>;
+  disabled_at: Timestamp | null;
   effort: EffortLevel | null;
   memory: Generated<string>;
   model: string | null;
