@@ -111,11 +111,13 @@ client.on(Events.MessageCreate, async (message) => {
         message.channel.sendTyping().catch(() => {})
       },
       onText: async (text) => {
-        // GLM blank-lines between every line; keep one gap before headers, tighten the rest
+        // Spacing comes from the model now, steered by system.md examples, not chiselled here.
+        // The two newline passes below collapsed GLM's airy spacing but overshot into cramped
+        // walls with no paragraph breaks, so they're off while we try going natural.
         const tidy = text
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
-          .replace(/\n{2,}/g, '\n') // single-space everything
-          .replace(/([^\n])\n(\*\*[^\n]+\*\*|#{1,6} [^\n]+)$/gm, '$1\n\n$2') // one blank line before a header
+          // .replace(/\n{2,}/g, '\n') // single-space everything
+          // .replace(/([^\n])\n(\*\*[^\n]+\*\*|#{1,6} [^\n]+)$/gm, '$1\n\n$2') // one blank line before a header
           .trim()
         if (!tidy) return
         for (const part of splitForDiscord(tidy)) {
