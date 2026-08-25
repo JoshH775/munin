@@ -8,11 +8,19 @@ import {
   toChatTranscript
 } from '../repositories/messages'
 import { turn } from '../ai'
-import { deleteSettings, resolveSettings } from '../repositories/channelSettings'
+import {
+  deleteSettings,
+  resolveSettings
+} from '../repositories/channelSettings'
 import { fetchAllMessages, getAllThreads } from './utils'
 import { log } from '../logger'
-import { startWorkTool, tavilyExtractTool, tavilySearchTool, updateMemoryTool } from '../ai/tools'
-import { handleConfigInteraction, registerCommands } from './commands'
+import {
+  startWorkTool,
+  tavilyExtractTool,
+  tavilySearchTool,
+  updateMemoryTool
+} from '../ai/tools'
+import { handleConfigInteraction, handleMuteInteraction, registerCommands } from './commands'
 import { match } from 'ts-pattern'
 import { insertUsage } from '../repositories/usage'
 
@@ -52,11 +60,17 @@ client.on(Events.MessageCreate, async (message) => {
   if (message.author.id === client.user?.id) return
   if (message.system) return // ignore discord system notices (thread created, pins, joins, …)
   const channelId = message.channelId
-  const parentChannelId = message.channel.isThread() ? message.channel.parentId : null
-  const channelName = 'name' in message.channel ? message.channel.name : channelId
+  const parentChannelId = message.channel.isThread()
+    ? message.channel.parentId
+    : null
+  const channelName =
+    'name' in message.channel ? message.channel.name : channelId
 
   try {
-    log.info({ channelId, parentChannelId, user: message.author.username }, 'message received')
+    log.info(
+      { channelId, parentChannelId, user: message.author.username },
+      'message received'
+    )
 
     await insertMessage({
       channel_id: channelId,
@@ -73,10 +87,21 @@ client.on(Events.MessageCreate, async (message) => {
       resolveSettings(channelId, parentChannelId)
     ])
 
+    if (!settings.enabled) {
+      log.info({ channelId }, 'channel disabled, ignoring message')
+      return
+    }
+
     const transcript = toChatTranscript(history, client.user!.id)
     const { usage } = await turn({
       messages: settings.memory.trim()
-        ? [...transcript, { role: 'user' as const, content: `<memory>\n${settings.memory}\n</memory>` }]
+        ? [
+            ...transcript,
+            {
+              role: 'user' as const,
+              content: `<memory>\n${settings.memory}\n</memory>`
+            }
+          ]
         : transcript,
       model: settings.model,
       effort: settings.effort,
@@ -170,6 +195,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     await match(interaction.commandName)
       .with('config', () => handleConfigInteraction(interaction))
+      .with('mute', () => handleMuteInteraction(interaction))
       .otherwise(async () => {})
   } catch (err) {
     log.error({ err, command: interaction.commandName }, 'interaction failed')
@@ -255,4 +281,3 @@ async function backfill(): Promise<void> {
     'backfill complete'
   )
 }
-
