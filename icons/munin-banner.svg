@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1700" height="600" viewBox="0 0 1700 600">
+  <rect width="1700" height="600" fill="#1E2547"/>
+  <rect x="28" y="28" width="1644" height="544" rx="14" fill="none" stroke="#E3B24A" stroke-width="5"/>
+
+  <!-- wordmark centered on the page -->
+  <text x="855" y="358" text-anchor="middle" font-family="P052" font-weight="bold" font-size="168" letter-spacing="20" fill="#E3B24A">MUNIN</text>
+
+  <!-- flanking dots -->
+  <circle cx="440" cy="300" r="14" fill="#E3B24A"/>
+  <circle cx="1270" cy="300" r="14" fill="#E3B24A"/>
+
+  <!-- small tight rune row underneath -->
+  <g stroke="#E3B24A" stroke-width="30" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <g transform="translate(795,442) scale(0.17) translate(-254,-256)">
+      <line x1="196" y1="130" x2="196" y2="382"/>
+      <line x1="196" y1="168" x2="312" y2="240"/>
+      <line x1="196" y1="236" x2="312" y2="308"/>
+    </g>
+    <g transform="translate(855,442) scale(0.17) translate(-256,-256)">
+      <line x1="172" y1="132" x2="172" y2="380"/>
+      <line x1="340" y1="132" x2="340" y2="380"/>
+      <line x1="172" y1="132" x2="340" y2="300"/>
+      <line x1="340" y1="132" x2="172" y2="300"/>
+    </g>
+    <g transform="translate(915,442) scale(0.17) translate(-264,-256)">
+      <line x1="206" y1="128" x2="206" y2="384"/>
+      <line x1="206" y1="128" x2="322" y2="204"/>
+      <line x1="206" y1="384" x2="322" y2="308"/>
+    </g>
+  </g>
+</svg>
