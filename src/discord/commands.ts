@@ -8,7 +8,6 @@ import {
 import { efforts, listModelIds, type Effort } from '../ai'
 import {
   resolveSettings,
-  setIndexChannel,
   toggleChannelMute,
   toggleEphemeral,
   updateConfig
@@ -23,7 +22,7 @@ const modelIds = (await listModelIds()).slice(0, 24)
 
 const config = new SlashCommandBuilder()
   .setName('config')
-  .setDescription("View or change this channel's model and effort")
+  .setDescription("View or change this channel's agent config (model, effort)")
   .addStringOption((o) =>
     o
       .setName('model')
@@ -43,10 +42,6 @@ const ephemeral = new SlashCommandBuilder()
   .setName('ephemeral')
   .setDescription('Toggle this channel as ephemeral (auto-clears ~5 min after the last message, never remembered)')
 
-const index = new SlashCommandBuilder()
-  .setName('index')
-  .setDescription('Make this channel the live index of all channels')
-
 const clear = new SlashCommandBuilder()
   .setName('clear')
   .setDescription('Delete the last N messages in this channel')
@@ -59,7 +54,7 @@ const clear = new SlashCommandBuilder()
       .setMaxValue(100)
   )
 
-const commands = [config, mute, ephemeral, index, clear]
+const commands = [config, mute, ephemeral, clear]
 
 
 
@@ -108,15 +103,6 @@ export async function handleEphemeralInteraction(interaction: ChatInputCommandIn
     content: on
       ? 'This channel is now ephemeral. Messages clear about 5 minutes after the last one, and nothing here enters memory.'
       : 'This channel is no longer ephemeral.',
-    flags: MessageFlags.Ephemeral
-  })
-}
-
-export async function handleIndexInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
-  await setIndexChannel(interaction.channelId)
-  log.info({ channelId: interaction.channelId }, 'index channel set')
-  await interaction.reply({
-    content: 'This channel is now the index. It refreshes automatically as channels are used.',
     flags: MessageFlags.Ephemeral
   })
 }

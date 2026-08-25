@@ -35,20 +35,6 @@ export async function getLatestMessage(
   return row ?? null
 }
 
-// latest real message per channel (skipping munin's tool-use notes), for the index preview.
-export async function getLatestMessagePerChannel(): Promise<
-  { channel_id: string; content: string; sent_at: Date }[]
-> {
-  return db
-    .selectFrom('messages')
-    .select(['channel_id', 'content', 'sent_at'])
-    .where('content', 'not like', 'Tool used:%')
-    .distinctOn('channel_id')
-    .orderBy('channel_id')
-    .orderBy('sent_at', 'desc')
-    .execute()
-}
-
 export async function getConversation({
   channelId,
 }: {

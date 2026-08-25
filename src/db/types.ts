@@ -26,7 +26,6 @@ export interface ChannelSettings {
   disabled_at: Timestamp | null;
   effort: EffortLevel | null;
   ephemeral: Generated<boolean>;
-  is_index: Generated<boolean>;
   memory: Generated<string>;
   model: string | null;
   system_prompt: string | null;
