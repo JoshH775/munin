@@ -6,7 +6,14 @@ import {
   SlashCommandBuilder
 } from 'discord.js'
 import { efforts, listModelIds, type Effort } from '../ai'
-import { resolveSettings, toggleChannelMute, updateConfig } from '../repositories/channelSettings'
+import {
+  resolveSettings,
+  setIndexChannel,
+  toggleChannelMute,
+  toggleEphemeral,
+  updateConfig
+} from '../repositories/channelSettings'
+import { deleteMessages } from '../repositories/messages'
 import { log } from '../logger'
 
 const DEFAULT = '__default__' // choice value meaning "clear the override"
@@ -32,7 +39,27 @@ const config = new SlashCommandBuilder()
 
 const mute = new SlashCommandBuilder().setName("mute").setDescription("Mute or unmute munin in this channel").addBooleanOption((b) => b.setName("everywhere").setDescription("Apply across every channel, not just this one"))
 
-const commands = [config, mute]
+const ephemeral = new SlashCommandBuilder()
+  .setName('ephemeral')
+  .setDescription('Toggle this channel as ephemeral (auto-clears ~5 min after the last message, never remembered)')
+
+const index = new SlashCommandBuilder()
+  .setName('index')
+  .setDescription('Make this channel the live index of all channels')
+
+const clear = new SlashCommandBuilder()
+  .setName('clear')
+  .setDescription('Delete the last N messages in this channel')
+  .addIntegerOption((o) =>
+    o
+      .setName('count')
+      .setDescription('How many recent messages to delete')
+      .setRequired(true)
+      .setMinValue(1)
+      .setMaxValue(100)
+  )
+
+const commands = [config, mute, ephemeral, index, clear]
 
 
 
@@ -73,6 +100,44 @@ export async function handleMuteInteraction(interaction: ChatInputCommandInterac
   })
 }
 
+
+export async function handleEphemeralInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
+  const on = await toggleEphemeral(interaction.channelId)
+  log.info({ channelId: interaction.channelId, ephemeral: on }, `channel ${on ? 'now' : 'no longer'} ephemeral`)
+  await interaction.reply({
+    content: on
+      ? 'This channel is now ephemeral. Messages clear about 5 minutes after the last one, and nothing here enters memory.'
+      : 'This channel is no longer ephemeral.',
+    flags: MessageFlags.Ephemeral
+  })
+}
+
+export async function handleIndexInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
+  await setIndexChannel(interaction.channelId)
+  log.info({ channelId: interaction.channelId }, 'index channel set')
+  await interaction.reply({
+    content: 'This channel is now the index. It refreshes automatically as channels are used.',
+    flags: MessageFlags.Ephemeral
+  })
+}
+
+export async function handleClearInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
+  const count = interaction.options.getInteger('count', true)
+  const channel = interaction.channel
+  if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+    await interaction.reply({ content: 'I can only clear a server text channel.', flags: MessageFlags.Ephemeral })
+    return
+  }
+  const deleted = await channel.bulkDelete(count, true)
+  await deleteMessages([...deleted.keys()])
+  log.info({ channelId: channel.id, deleted: deleted.size }, 'cleared messages')
+  await interaction.reply({
+    content:
+      `Deleted ${deleted.size} message${deleted.size === 1 ? '' : 's'}.` +
+      (deleted.size < count ? " (Messages older than 14 days can't be bulk-deleted.)" : ''),
+    flags: MessageFlags.Ephemeral
+  })
+}
 
 export async function registerCommands(client: Client): Promise<void> {
   const json = commands.map((c) => c.toJSON())
