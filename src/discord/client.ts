@@ -15,7 +15,6 @@ import {
 import { fetchAllMessages, getAllThreads } from './utils'
 import { log } from '../logger'
 import {
-  startWorkTool,
   tavilyExtractTool,
   tavilySearchTool,
   updateMemoryTool
@@ -63,9 +62,6 @@ client.on(Events.MessageCreate, async (message) => {
   const parentChannelId = message.channel.isThread()
     ? message.channel.parentId
     : null
-  const channelName =
-    'name' in message.channel ? message.channel.name : channelId
-
   try {
     log.info(
       { channelId, parentChannelId, user: message.author.username },
@@ -93,6 +89,12 @@ client.on(Events.MessageCreate, async (message) => {
     }
 
     const transcript = toChatTranscript(history, client.user!.id)
+    const tools = [
+      updateMemoryTool(channelId, parentChannelId),
+      tavilySearchTool(),
+      tavilyExtractTool()
+    ]
+    const toolNames = new Set(tools.map((t) => t.definition.name))
     const { usage } = await turn({
       messages: settings.memory.trim()
         ? [
@@ -134,6 +136,9 @@ client.on(Events.MessageCreate, async (message) => {
         }
       },
       onToolUse: async (tool) => {
+        // GLM sometimes emits tool calls for tools it doesn't have (code_execution, …) or an
+        // empty-name block; only announce real tools, so we don't post phantom or blank lines.
+        if (!toolNames.has(tool.name)) return
         const full = `Tool used: ${tool.name}(${JSON.stringify(tool.input)})`
         const line = full.length > 45 ? `${full.slice(0, 44)}…` : full
         const sent = await message.channel.send(`-# ${line}`).catch(() => null)
@@ -149,12 +154,7 @@ client.on(Events.MessageCreate, async (message) => {
           })
         }
       },
-      tools: [
-        updateMemoryTool(channelId, parentChannelId),
-        startWorkTool(channelName),
-        tavilySearchTool(),
-        tavilyExtractTool()
-      ]
+      tools
     })
 
     await insertUsage({
