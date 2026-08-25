@@ -213,6 +213,9 @@ importers:
       '@tavily/core':
         specifier: ^0.7.7
         version: 0.7.7(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
       dedent:
         specifier: ^1.7.2
         version: 1.7.2
@@ -684,6 +687,10 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  croner@10.0.1:
+    resolution: {integrity: sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g==}
+    engines: {node: '>=18.0'}
 
   dateformat@4.6.3:
     resolution: {integrity: sha512-2P0p0pFGzHS5EMnhdxQi7aJN+iMheud0UhG4dlE1DLAlvL8JHjJJTX/CSm4JXwV0Ka5nGk3zC5mcb5bUQUxxMA==}
@@ -1456,6 +1463,8 @@ snapshots:
       parse-json: 5.2.0
     optionalDependencies:
       typescript: 7.0.2
+
+  croner@10.0.1: {}
 
   dateformat@4.6.3: {}
 

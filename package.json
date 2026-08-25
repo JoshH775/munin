@@ -29,6 +29,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
     "@tavily/core": "^0.7.7",
+    "croner": "^10.0.1",
     "dedent": "^1.7.2",
     "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
