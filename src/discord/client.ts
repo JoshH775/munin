@@ -62,6 +62,9 @@ client.on(Events.MessageCreate, async (message) => {
   const parentChannelId = message.channel.isThread()
     ? message.channel.parentId
     : null
+  const channelName = message.channel.isThread()
+    ? `#${message.channel.parent?.name ?? 'unknown'} (thread: ${message.channel.name})`
+    : `#${'name' in message.channel ? message.channel.name : channelId}`
   try {
     log.info(
       { channelId, parentChannelId, user: message.author.username },
@@ -95,20 +98,19 @@ client.on(Events.MessageCreate, async (message) => {
       tavilyExtractTool()
     ]
     const toolNames = new Set(tools.map((t) => t.definition.name))
+    const systemSuffix = [
+      `The current date and time is ${message.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
+      `You are in ${channelName}.`,
+      settings.memory.trim() && `<memory>\n${settings.memory}\n</memory>`
+    ]
+      .filter(Boolean)
+      .join('\n\n')
     const { usage } = await turn({
-      messages: settings.memory.trim()
-        ? [
-            ...transcript,
-            {
-              role: 'user' as const,
-              content: `<memory>\n${settings.memory}\n</memory>`
-            }
-          ]
-        : transcript,
+      messages: transcript,
       model: settings.model,
       effort: settings.effort,
       system: settings.persona,
-      systemSuffix: `The current date and time is ${message.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
+      systemSuffix,
       onRoundStart: () => {
         message.channel.sendTyping().catch(() => {})
       },
