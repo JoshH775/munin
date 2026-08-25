@@ -12,7 +12,9 @@ A personal second brain: a Discord bot on a private server for life stuff — me
 
 ## Dev vs prod
 
-Same VPS, separated by directory. This checkout is dev: Postgres on 5434 from `docker-compose.dev.yml`. Prod is a clone at `/srv/munin`: Postgres on 20132 from `docker-compose.yml` (port scheme: `~/PORTS.md`). One Discord bot serves both, so running dev while prod is up gets duplicate replies — stop one first. Deploying is done from `/srv/munin`: pull, `pnpm db:push`, restart. Prod is touched only from that directory, deliberately — everything run from here stays on dev.
+Same VPS, separated by directory. This checkout is dev: Postgres on 5434 from `docker-compose.dev.yml`. Prod is a clone at `/srv/munin`: Postgres on 20132 from `docker-compose.yml` (port scheme: `~/PORTS.md`). One Discord bot serves both, so running dev while prod is up gets duplicate replies — stop one first. Deploying is done from `/srv/munin`: pull, `pnpm db:push`, restart. Because that deploy pulls from the remote, a commit only ships once it's on the remote — so when a commit is made specifically to ship, push it after committing (ordinary commits Josh reviews in the working tree and don't need pushing). Prod is touched only from that directory, deliberately — everything run from here stays on dev.
+
+Debugging prod data: its Postgres is on `localhost:20132` (database and user both `postgres`), and the full `DATABASE_URL` with the password lives in `/srv/munin/.env` — connect with `export $(grep '^DATABASE_URL=' /srv/munin/.env)` then `psql "$DATABASE_URL"`. Keep prod DB access read-only, SELECTs only, unless Josh explicitly asks for a write.
 
 ## Conventions
 
