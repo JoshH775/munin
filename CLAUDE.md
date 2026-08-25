@@ -19,4 +19,4 @@ Debugging prod data: its Postgres is on `localhost:20132` (database and user bot
 ## Conventions
 
 - tsx runs everything; imports are extensionless (bundler resolution), so plain `node` cannot run this code.
-- Chat model and effort default to the global row's values (GLM-5 on DeepInfra, high effort); per-channel `model`/`effort` overrides apply to chat only, and scheduled jobs stay on Sonnet regardless.
+- Chat model and effort default to the global row's values (GLM-5.2 on DeepInfra, high effort); per-channel `model`/`effort` overrides apply to chat only, and scheduled jobs stay on Sonnet regardless.
