@@ -18,6 +18,7 @@ export type ChannelSettings = {
   persona: string
   memory: string
   parentMemoryChannelId: string
+  enabled: boolean
 }
 
 export async function resolveSettings(
@@ -62,6 +63,7 @@ export async function resolveSettings(
       .filter(Boolean)
       .join('\n\n'),
     parentMemoryChannelId: parentChannelId ?? 'global',
+    enabled: !(own?.disabled_at || parent?.disabled_at || global.disabled_at)
   }
 }
 
@@ -104,4 +106,26 @@ export async function deleteSettings(channelIds: string[]): Promise<void> {
   const ids = channelIds.filter((id) => id !== 'global')
   if (ids.length === 0) return
   await db.deleteFrom('channel_settings').where('channel_id', 'in', ids).execute()
+}
+
+
+// toggles the mute for one channel (or 'global'). returns true if now muted, false if now unmuted.
+export async function toggleChannelMute(channelId: string): Promise<boolean> {
+  const existing = await db
+    .selectFrom('channel_settings')
+    .select('disabled_at')
+    .where('channel_id', '=', channelId)
+    .executeTakeFirst()
+  const muting = !existing?.disabled_at // no row or null = currently on, so we're muting
+  await db
+    .insertInto('channel_settings')
+    .values({ channel_id: channelId, disabled_at: muting ? sql`now()` : null })
+    .onConflict((oc) =>
+      oc.column('channel_id').doUpdateSet({
+        disabled_at: muting ? sql`now()` : null,
+        updated_at: sql`now()`
+      })
+    )
+    .execute()
+  return muting
 }
