@@ -105,7 +105,9 @@ client.on(Events.MessageCreate, async (message) => {
     const transcript = toChatTranscript(history, client.user!.id)
     const tools = [
       // ephemeral channels are throwaway: no memory tool, so nothing here is remembered
-      ...(settings.ephemeral ? [] : [updateMemoryTool(channelId, parentChannelId)]),
+      ...(settings.ephemeral
+        ? []
+        : [updateMemoryTool(channelId, parentChannelId)]),
       tavilySearchTool(),
       tavilyExtractTool()
     ]
@@ -127,13 +129,8 @@ client.on(Events.MessageCreate, async (message) => {
         message.channel.sendTyping().catch(() => {})
       },
       onText: async (text) => {
-        // Spacing comes from the model now, steered by system.md examples, not chiselled here.
-        // The two newline passes below collapsed GLM's airy spacing but overshot into cramped
-        // walls with no paragraph breaks, so they're off while we try going natural.
         const tidy = text
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
-          // .replace(/\n{2,}/g, '\n') // single-space everything
-          // .replace(/([^\n])\n(\*\*[^\n]+\*\*|#{1,6} [^\n]+)$/gm, '$1\n\n$2') // one blank line before a header
           .trim()
         if (!tidy) return
         for (const part of splitForDiscord(tidy)) {
@@ -162,6 +159,22 @@ client.on(Events.MessageCreate, async (message) => {
             user_id: client.user!.id,
             user_name: 'munin',
             id: sent.id,
+            sent_at: sent.createdAt
+          })
+        }
+      },
+      onThinking: async () => {
+        const sent = await message.channel
+          .send(`-# *Thinking...*`)
+          .catch(() => null)
+        if (sent) {
+          await insertMessage({
+            channel_id: channelId,
+            parent_channel_id: parentChannelId,
+            content: sent.content,
+            user_id: client.user!.id,
+            id: sent.id,
+            user_name: 'munin',
             sent_at: sent.createdAt
           })
         }
@@ -226,7 +239,11 @@ client.once(Events.ClientReady, async (c) => {
     await registerCommands(client)
     await backfill()
     ready = true
-    new Cron('* * * * *', { catch: (err) => log.error({ err }, 'ephemeral sweep failed') }, () => sweepEphemeral(client))
+    new Cron(
+      '* * * * *',
+      { catch: (err) => log.error({ err }, 'ephemeral sweep failed') },
+      () => sweepEphemeral(client)
+    )
   } catch (err) {
     log.fatal({ err }, 'startup failed, exiting')
     process.exit(1)

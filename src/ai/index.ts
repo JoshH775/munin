@@ -33,6 +33,7 @@ export type TurnParams = {
   onRoundStart?: () => void
   onToolUse?: (tool: Anthropic.ToolUseBlock) => void | Promise<void>
   onText?: (text: string) => void | Promise<void>
+  onThinking?: () => void
 }
 
 export async function turn(params: TurnParams): Promise<{
@@ -50,6 +51,7 @@ export async function turn(params: TurnParams): Promise<{
     tools = [],
     onToolUse,
     onText,
+    onThinking,
     onRoundStart,
     model,
     maxTokens = 4096,
@@ -143,6 +145,9 @@ export async function turn(params: TurnParams): Promise<{
               is_error: true
             })
           }
+        })
+        .with({ type: 'thinking' }, () => {
+          onThinking?.()
         })
         .otherwise(() => {})
     }
