@@ -71,8 +71,11 @@ export function toChatTranscript(
 ): Anthropic.MessageParam[] {
   const params = messages
     .filter((m) => m.content.trim()) // drop contentless messages (attachments, embeds, system events)
-    // keep tool-use notes out of the model's context so it can't imitate them as fake tool calls
-    .filter((m) => !(m.user_id === botUserId && m.content.startsWith('Tool used:')))
+    .filter((m) => {
+      if (m.user_id !== botUserId) return true
+      const meta = m.content.replace(/^-# /, '')
+      return !(meta.startsWith('Tool used:') || meta.startsWith('*Thinking...*'))
+    })
     .map(
       (m): Anthropic.MessageParam => ({
         role: m.user_id === botUserId ? 'assistant' : 'user',
