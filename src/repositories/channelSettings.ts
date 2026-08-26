@@ -19,6 +19,7 @@ export type ChannelSettings = {
   memory: string
   parentMemoryChannelId: string
   enabled: boolean
+  ephemeral: boolean
 }
 
 export async function resolveSettings(
@@ -63,7 +64,8 @@ export async function resolveSettings(
       .filter(Boolean)
       .join('\n\n'),
     parentMemoryChannelId: parentChannelId ?? 'global',
-    enabled: !(own?.disabled_at || parent?.disabled_at || global.disabled_at)
+    enabled: !(own?.disabled_at || parent?.disabled_at || global.disabled_at),
+    ephemeral: !!(own?.ephemeral || parent?.ephemeral)
   }
 }
 
@@ -108,6 +110,34 @@ export async function deleteSettings(channelIds: string[]): Promise<void> {
   await db.deleteFrom('channel_settings').where('channel_id', 'in', ids).execute()
 }
 
+
+// toggles the ephemeral flag for a channel. returns true if now ephemeral, false if not.
+export async function toggleEphemeral(channelId: string): Promise<boolean> {
+  const existing = await db
+    .selectFrom('channel_settings')
+    .select('ephemeral')
+    .where('channel_id', '=', channelId)
+    .executeTakeFirst()
+  const next = !existing?.ephemeral
+  await db
+    .insertInto('channel_settings')
+    .values({ channel_id: channelId, ephemeral: next })
+    .onConflict((oc) =>
+      oc.column('channel_id').doUpdateSet({ ephemeral: next, updated_at: sql`now()` })
+    )
+    .execute()
+  return next
+}
+
+// channel ids currently flagged ephemeral (the idle sweep's work list).
+export async function listEphemeralChannelIds(): Promise<string[]> {
+  const rows = await db
+    .selectFrom('channel_settings')
+    .select('channel_id')
+    .where('ephemeral', '=', true)
+    .execute()
+  return rows.map((r) => r.channel_id)
+}
 
 // toggles the mute for one channel (or 'global'). returns true if now muted, false if now unmuted.
 export async function toggleChannelMute(channelId: string): Promise<boolean> {
