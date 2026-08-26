@@ -37,7 +37,6 @@ export interface Messages {
   content: string;
   created_at: Generated<Timestamp>;
   id: string;
-  parent_channel_id: string | null;
   sent_at: Timestamp;
   user_id: string;
   user_name: string;

@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
+import { ChannelType, Client, Events, GatewayIntentBits, Partials } from 'discord.js'
 import {
   deleteChannelMessages,
   deleteMessages,
@@ -84,7 +84,6 @@ client.on(Events.MessageCreate, async (message) => {
 
     await insertMessage({
       channel_id: channelId,
-      parent_channel_id: parentChannelId,
       content: message.content,
       user_id: message.author.id,
       user_name: message.author.username,
@@ -137,7 +136,6 @@ client.on(Events.MessageCreate, async (message) => {
           const sent = await message.channel.send(part)
           await insertMessage({
             channel_id: channelId,
-            parent_channel_id: parentChannelId,
             content: part,
             user_id: client.user!.id,
             user_name: 'munin',
@@ -154,7 +152,6 @@ client.on(Events.MessageCreate, async (message) => {
         if (sent) {
           await insertMessage({
             channel_id: channelId,
-            parent_channel_id: parentChannelId,
             content: full,
             user_id: client.user!.id,
             user_name: 'munin',
@@ -170,7 +167,6 @@ client.on(Events.MessageCreate, async (message) => {
         if (sent) {
           await insertMessage({
             channel_id: channelId,
-            parent_channel_id: parentChannelId,
             content: sent.content,
             user_id: client.user!.id,
             id: sent.id,
@@ -188,6 +184,13 @@ client.on(Events.MessageCreate, async (message) => {
       model: settings.model,
       ...usage
     })
+
+    const channel = client.channels.cache.get(channelId)
+    if (channel?.type === ChannelType.GuildText && channel.position !== 0) {
+      await channel
+        .setPosition(0)
+        .catch((err) => log.error({ err, channelId }, 'reorder failed'))
+    }
 
     log.info({ channelId, parentChannelId }, 'replied')
   } catch (err) {
@@ -269,7 +272,6 @@ async function backfill(): Promise<void> {
         inserts.push(
           insertMessage({
             channel_id: channel.id,
-            parent_channel_id: null,
             content: message.content,
             user_name: message.author.username,
             user_id: message.author.id,
@@ -290,7 +292,6 @@ async function backfill(): Promise<void> {
         inserts.push(
           insertMessage({
             channel_id: thread.id,
-            parent_channel_id: thread.parentId,
             content: message.content,
             user_name: message.author.username,
             user_id: message.author.id,
