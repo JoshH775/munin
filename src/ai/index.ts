@@ -82,7 +82,7 @@ export async function turn(params: TurnParams): Promise<{
   }
 
   // rounds are API round trips, not conversational turns
-  for (let round = 0; round < 8; round++) {
+  for (let round = 0; round < 20; round++) {
     onRoundStart?.()
     const stream = client.messages.stream({
       max_tokens: maxTokens,
