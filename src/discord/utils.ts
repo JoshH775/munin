@@ -2,9 +2,13 @@ import {
   Collection,
   type AnyThreadChannel,
   type Channel,
+  type Client,
   type Guild,
   type Message
 } from 'discord.js'
+import { listEphemeralChannelIds } from '../repositories/channelSettings'
+import { deleteMessages, getLatestMessage } from '../repositories/messages'
+import { log } from '../logger'
 
 export async function fetchAllMessages(
   channel: Channel,
@@ -40,6 +44,21 @@ export async function fetchAllMessages(
     if (batch.size < 100) break
   }
   return messages
+}
+
+export async function sweepEphemeral(client: Client): Promise<void> {
+  for (const channelId of await listEphemeralChannelIds()) {
+    const last = await getLatestMessage(channelId)
+    if (!last) continue
+    if (Date.now() - last.sent_at.getTime() < 5 * 60_000) continue
+    const channel = await client.channels.fetch(channelId).catch(() => null)
+    if (!channel || !channel.isTextBased() || channel.isDMBased()) continue
+    const deleted = await channel.bulkDelete(100, true)
+    if (deleted.size > 0) {
+      await deleteMessages([...deleted.keys()])
+      log.info({ channelId, cleared: deleted.size }, 'swept ephemeral channel')
+    }
+  }
 }
 
 // every thread in a guild, active and archived, so a backfill misses nothing.
