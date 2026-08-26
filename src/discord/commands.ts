@@ -22,7 +22,7 @@ const modelIds = (await listModelIds()).slice(0, 24)
 
 const config = new SlashCommandBuilder()
   .setName('config')
-  .setDescription("View or change this channel's agent config (model, effort)")
+  .setDescription("Change this channel's model or effort")
   .addStringOption((o) =>
     o
       .setName('model')
@@ -35,6 +35,14 @@ const config = new SlashCommandBuilder()
       .setDescription('Effort (Default clears the override)')
       .addChoices({ name: 'Default', value: DEFAULT }, ...efforts.map((e) => ({ name: e, value: e })))
   )
+
+const settings = new SlashCommandBuilder()
+  .setName('settings')
+  .setDescription("View this channel's settings")
+
+const memory = new SlashCommandBuilder()
+  .setName('memory')
+  .setDescription("View this channel's memory")
 
 const mute = new SlashCommandBuilder().setName("mute").setDescription("Mute or unmute munin in this channel").addBooleanOption((b) => b.setName("everywhere").setDescription("Apply across every channel, not just this one"))
 
@@ -54,7 +62,7 @@ const clear = new SlashCommandBuilder()
       .setMaxValue(100)
   )
 
-const commands = [config, mute, ephemeral, clear]
+const commands = [config, settings, memory, mute, ephemeral, clear]
 
 
 
@@ -63,23 +71,57 @@ export async function handleConfigInteraction(
 ): Promise<void> {
   const model = interaction.options.getString('model')
   const effort = interaction.options.getString('effort')
-  if (model !== null || effort !== null) {
-    await updateConfig({
-      channelId: interaction.channelId,
-      ...(model !== null && { model: model === DEFAULT ? null : model }),
-      ...(effort !== null && { effort: effort === DEFAULT ? null : (effort as Effort) })
+  if (model === null && effort === null) {
+    await interaction.reply({
+      content: 'Pass a model or effort to change. Use `/settings` to view this channel.',
+      flags: MessageFlags.Ephemeral
     })
+    return
   }
 
+  const patch: { model?: string | null; effort?: Effort | null } = {}
+  const changes: string[] = []
+  if (model !== null) {
+    patch.model = model === DEFAULT ? null : model
+    changes.push(`model → ${model === DEFAULT ? 'default' : `\`${model}\``}`)
+  }
+  if (effort !== null) {
+    patch.effort = effort === DEFAULT ? null : (effort as Effort)
+    changes.push(`effort → ${effort === DEFAULT ? 'default' : `\`${effort}\``}`)
+  }
+
+  await updateConfig({ channelId: interaction.channelId, ...patch })
+  await interaction.reply({ content: `Updated ${changes.join(', ')}.`, flags: MessageFlags.Ephemeral })
+}
+
+export async function handleSettingsInteraction(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
   const parentChannelId = interaction.channel?.isThread() ? interaction.channel.parentId : null
-  const resolved = await resolveSettings(interaction.channelId, parentChannelId)
+  const s = await resolveSettings(interaction.channelId, parentChannelId)
   const embed = new EmbedBuilder()
-    .setTitle('Channel config')
+    .setTitle('Channel settings')
+    .setDescription(`<#${interaction.channelId}>`)
     .setColor(0x1e2547)
     .addFields(
-      { name: 'Model', value: `\`${resolved.model}\``, inline: true },
-      { name: 'Effort', value: `\`${resolved.effort}\``, inline: true }
+      { name: 'Model', value: `\`${s.model}\``, inline: true },
+      { name: 'Effort', value: `\`${s.effort}\``, inline: true },
+      { name: 'Replies', value: s.enabled ? 'On' : 'Muted', inline: true },
+      { name: 'Ephemeral', value: s.ephemeral ? 'Yes' : 'No', inline: true }
     )
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
+}
+
+export async function handleMemoryInteraction(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  const parentChannelId = interaction.channel?.isThread() ? interaction.channel.parentId : null
+  const s = await resolveSettings(interaction.channelId, parentChannelId)
+  const text = s.memory.trim()
+  const embed = new EmbedBuilder()
+    .setTitle('Memory')
+    .setDescription(text ? (text.length > 4096 ? `${text.slice(0, 4095)}…` : text) : '_No memory yet._')
+    .setColor(0x1e2547)
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
 }
 

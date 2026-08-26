@@ -23,7 +23,9 @@ import {
   handleClearInteraction,
   handleConfigInteraction,
   handleEphemeralInteraction,
+  handleMemoryInteraction,
   handleMuteInteraction,
+  handleSettingsInteraction,
   registerCommands
 } from './commands'
 import { Cron } from 'croner'
@@ -207,6 +209,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     await match(interaction.commandName)
       .with('config', () => handleConfigInteraction(interaction))
+      .with('settings', () => handleSettingsInteraction(interaction))
+      .with('memory', () => handleMemoryInteraction(interaction))
       .with('mute', () => handleMuteInteraction(interaction))
       .with('ephemeral', () => handleEphemeralInteraction(interaction))
       .with('clear', () => handleClearInteraction(interaction))
