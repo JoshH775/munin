@@ -1,9 +1,9 @@
-import { Client, Events, GatewayIntentBits } from 'discord.js'
+import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
 import {
   deleteChannelMessages,
   deleteMessages,
   getConversation,
-  getLatestMessageId,
+  getLatestMessage,
   insertMessage,
   toChatTranscript
 } from '../repositories/messages'
@@ -12,14 +12,21 @@ import {
   deleteSettings,
   resolveSettings
 } from '../repositories/channelSettings'
-import { fetchAllMessages, getAllThreads } from './utils'
+import { fetchAllMessages, getAllThreads, sweepEphemeral } from './utils'
 import { log } from '../logger'
 import {
   tavilyExtractTool,
   tavilySearchTool,
   updateMemoryTool
 } from '../ai/tools'
-import { handleConfigInteraction, handleMuteInteraction, registerCommands } from './commands'
+import {
+  handleClearInteraction,
+  handleConfigInteraction,
+  handleEphemeralInteraction,
+  handleMuteInteraction,
+  registerCommands
+} from './commands'
+import { Cron } from 'croner'
 import { match } from 'ts-pattern'
 import { insertUsage } from '../repositories/usage'
 
@@ -33,7 +40,9 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
-  ]
+  ],
+  // partials so delete events fire for messages not in the cache (older ones)
+  partials: [Partials.Message, Partials.Channel]
 })
 
 client.login(token)
@@ -93,7 +102,8 @@ client.on(Events.MessageCreate, async (message) => {
 
     const transcript = toChatTranscript(history, client.user!.id)
     const tools = [
-      updateMemoryTool(channelId, parentChannelId),
+      // ephemeral channels are throwaway: no memory tool, so nothing here is remembered
+      ...(settings.ephemeral ? [] : [updateMemoryTool(channelId, parentChannelId)]),
       tavilySearchTool(),
       tavilyExtractTool()
     ]
@@ -138,8 +148,6 @@ client.on(Events.MessageCreate, async (message) => {
         }
       },
       onToolUse: async (tool) => {
-        // GLM sometimes emits tool calls for tools it doesn't have (code_execution, …) or an
-        // empty-name block; only announce real tools, so we don't post phantom or blank lines.
         if (!toolNames.has(tool.name)) return
         const full = `Tool used: ${tool.name}(${JSON.stringify(tool.input)})`
         const line = full.length > 45 ? `${full.slice(0, 44)}…` : full
@@ -200,6 +208,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await match(interaction.commandName)
       .with('config', () => handleConfigInteraction(interaction))
       .with('mute', () => handleMuteInteraction(interaction))
+      .with('ephemeral', () => handleEphemeralInteraction(interaction))
+      .with('clear', () => handleClearInteraction(interaction))
       .otherwise(async () => {})
   } catch (err) {
     log.error({ err, command: interaction.commandName }, 'interaction failed')
@@ -212,6 +222,7 @@ client.once(Events.ClientReady, async (c) => {
     await registerCommands(client)
     await backfill()
     ready = true
+    new Cron('* * * * *', { catch: (err) => log.error({ err }, 'ephemeral sweep failed') }, () => sweepEphemeral(client))
   } catch (err) {
     log.fatal({ err }, 'startup failed, exiting')
     process.exit(1)
@@ -229,7 +240,7 @@ async function backfill(): Promise<void> {
     const channels = await guild.channels.fetch()
 
     for (const channel of channels.values().filter((c) => !!c)) {
-      const after = await getLatestMessageId(channel.id)
+      const after = (await getLatestMessage(channel.id))?.id ?? null
       const messages = await fetchAllMessages(channel, after)
       if (messages.length === 0) continue
       for (const message of messages) {
@@ -251,7 +262,7 @@ async function backfill(): Promise<void> {
 
     for (const thread of await getAllThreads(guild)) {
       if (!thread.parentId) continue
-      const after = await getLatestMessageId(thread.id)
+      const after = (await getLatestMessage(thread.id))?.id ?? null
       const messages = await fetchAllMessages(thread, after)
       for (const message of messages) {
         if (message.system) continue
