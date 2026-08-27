@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { makeTool } from './makeTool'
 import { updateMemory } from '../repositories/channelSettings'
+import { ChannelType, TextChannel, type Client } from 'discord.js'
 
 const apiKey = process.env.TAVILY_API_KEY
 const tavilyClient = apiKey ? tavily({ apiKey }) : null
@@ -190,3 +191,35 @@ export function startWorkTool(channelName: string) {
     }
   })
 }
+
+export async function listChannelsTool(client: Client) {
+  return makeTool({
+    name: 'list_channels',
+    description:
+      'List every channel on the server, each as its name and id. Reach for it when you need to ' +
+      'know what channels exist — to point Josh at the right one, refer to another domain, or link ' +
+      'a channel inline (Discord renders `<#id>` as a clickable jump). Returns the channel list ' +
+      'only, not what is inside them.',
+    inputSchema: z.object({}),
+    run: (args) => {
+      const channels = client.channels.cache.values().filter((c): c is TextChannel => c.type === ChannelType.GuildText)
+      const renderedChannels = channels.map((channel) => `- ${channel.name} (${channel.id})`).toArray().join(`\n\n`)
+      return renderedChannels
+    }
+  })
+}
+
+// export async function createReminderTool(client: Client) {
+//   return makeTool({
+//     name: '',
+//     description: '',
+//     inputSchema: z.object({
+//       date: z.ZodISODate(),
+//       reminderText: z.string().max(1800),
+//       channelId: z.string()
+//     }),
+//     run: (args) => {
+//       const job = new Cron({})
+//     }
+//   })
+// }
