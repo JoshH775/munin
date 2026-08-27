@@ -15,6 +15,7 @@ import {
 import { fetchAllMessages, getAllThreads, sweepEphemeral } from './utils'
 import { log } from '../logger'
 import {
+  listChannelsTool,
   tavilyExtractTool,
   tavilySearchTool,
   updateMemoryTool
@@ -108,7 +109,8 @@ client.on(Events.MessageCreate, async (message) => {
         ? []
         : [updateMemoryTool(channelId, parentChannelId)]),
       tavilySearchTool(),
-      tavilyExtractTool()
+      tavilyExtractTool(),
+      listChannelsTool(client)
     ]
     const toolNames = new Set(tools.map((t) => t.definition.name))
     const systemSuffix = [
@@ -118,7 +120,7 @@ client.on(Events.MessageCreate, async (message) => {
     ]
       .filter(Boolean)
       .join('\n\n')
-    const { usage } = await turn({
+    const { usage, truncated } = await turn({
       messages: transcript,
       model: settings.model,
       effort: settings.effort,
@@ -184,6 +186,10 @@ client.on(Events.MessageCreate, async (message) => {
       model: settings.model,
       ...usage
     })
+
+    if (truncated) {
+      await message.channel.send('**Turn limit reached, output truncated.**')
+    }
 
     const channel = client.channels.cache.get(channelId)
     if (channel?.type === ChannelType.GuildText && channel.position !== 0) {
