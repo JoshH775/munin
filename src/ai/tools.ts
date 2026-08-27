@@ -201,7 +201,7 @@ export async function listChannelsTool(client: Client) {
       'a channel inline (Discord renders `<#id>` as a clickable jump). Returns the channel list ' +
       'only, not what is inside them.',
     inputSchema: z.object({}),
-    run: (args) => {
+    run: () => {
       const channels = client.channels.cache.values().filter((c): c is TextChannel => c.type === ChannelType.GuildText)
       const renderedChannels = channels.map((channel) => `- ${channel.name} (${channel.id})`).toArray().join(`\n\n`)
       return renderedChannels
