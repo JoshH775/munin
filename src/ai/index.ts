@@ -45,6 +45,7 @@ export async function turn(params: TurnParams): Promise<{
     cache_read_input_tokens: number
     cache_creation_input_tokens: number
   }
+  truncated?: boolean
 }> {
   const {
     messages,
@@ -84,7 +85,7 @@ export async function turn(params: TurnParams): Promise<{
   }
 
   // rounds are API round trips, not conversational turns
-  for (let round = 0; round < 20; round++) {
+  for (let round = 0; round < 30; round++) {
     onRoundStart?.()
     const stream = client.messages.stream({
       max_tokens: maxTokens,
@@ -157,6 +158,7 @@ export async function turn(params: TurnParams): Promise<{
 
     if (response.stop_reason === 'max_tokens') {
       console.warn(`[turn] hit max_tokens (${maxTokens}) - output truncated`)
+      return { messages: conversation, ended: false, usage: usageTotals, truncated: true}
     }
 
     if (response.stop_reason !== 'tool_use') {
@@ -170,8 +172,8 @@ export async function turn(params: TurnParams): Promise<{
   }
 
   return {
-    ended: false,
     messages: conversation,
+    ended: false,
     usage: usageTotals
   }
 }
