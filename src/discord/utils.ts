@@ -50,7 +50,7 @@ export async function sweepEphemeral(client: Client): Promise<void> {
   for (const channelId of await listEphemeralChannelIds()) {
     const last = await getLatestMessage(channelId)
     if (!last) continue
-    if (Date.now() - last.sent_at.getTime() < 5 * 60_000) continue
+    if (Date.now() - last.sent_at.getTime() < 10 * 60_000) continue
     const channel = await client.channels.fetch(channelId).catch(() => null)
     if (!channel || !channel.isTextBased() || channel.isDMBased()) continue
     const deleted = await channel.bulkDelete(100, true)
