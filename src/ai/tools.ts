@@ -192,7 +192,7 @@ export function startWorkTool(channelName: string) {
   })
 }
 
-export async function listChannelsTool(client: Client) {
+export function listChannelsTool(client: Client) {
   return makeTool({
     name: 'list_channels',
     description:
