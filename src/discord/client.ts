@@ -198,11 +198,11 @@ client.on(Events.MessageCreate, async (message) => {
     }
 
     const channel = client.channels.cache.get(channelId)
-    if (channel?.type === ChannelType.GuildText && channel.position !== 0) {
-      await channel
-        .setPosition(0)
-        .catch((err) => log.error({ err, channelId }, 'reorder failed'))
+    if (channel?.type === ChannelType.GuildText) {
+      if (channel.position !== 0) channel.setPosition(0).catch((err) => log.error({ err, channelId }, 'reorder failed'))
+      if (channel.parent && channel.parent.position !== 0) channel.parent.setPosition(0).catch((err) => log.error({ err, channelId }, 'reorder failed'))
     }
+    
 
     log.info({ channelId, parentChannelId }, 'replied')
   } catch (err) {
