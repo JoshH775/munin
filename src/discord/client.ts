@@ -15,7 +15,10 @@ import {
 import { fetchAllMessages, getAllThreads, sweepEphemeral } from './utils'
 import { log } from '../logger'
 import {
-  listChannelsTool,
+  channelTreeTool,
+  createCategoryTool,
+  deleteCategoryTool,
+  setChannelCategoryTool,
   tavilyExtractTool,
   tavilySearchTool,
   updateMemoryTool
@@ -110,7 +113,10 @@ client.on(Events.MessageCreate, async (message) => {
         : [updateMemoryTool(channelId, parentChannelId)]),
       tavilySearchTool(),
       tavilyExtractTool(),
-      listChannelsTool(client)
+      channelTreeTool(client),
+      deleteCategoryTool(client),
+      setChannelCategoryTool(client),
+      ...(message.guild ? [createCategoryTool(client, message.guild)] : [])
     ]
     const toolNames = new Set(tools.map((t) => t.definition.name))
     const systemSuffix = [

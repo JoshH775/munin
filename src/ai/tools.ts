@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { makeTool } from './makeTool'
 import { updateMemory } from '../repositories/channelSettings'
-import { ChannelType, TextChannel, type Client } from 'discord.js'
+import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
 
 const apiKey = process.env.TAVILY_API_KEY
 const tavilyClient = apiKey ? tavily({ apiKey }) : null
@@ -192,22 +192,114 @@ export function startWorkTool(channelName: string) {
   })
 }
 
-export function listChannelsTool(client: Client) {
+export function channelTreeTool(client: Client) {
   return makeTool({
-    name: 'list_channels',
+    name: 'channel_tree',
     description:
-      'List every channel on the server, each as its name and id. Reach for it when you need to ' +
-      'know what channels exist — to point Josh at the right one, refer to another domain, or link ' +
-      'a channel inline (Discord renders `<#id>` as a clickable jump). Returns the channel list ' +
-      'only, not what is inside them.',
+      "Show the server's channels grouped by category, each channel and category with its id. Reach for it to see what exists and grab the ids you need before linking a channel with `<#id>`, creating or deleting a category, or moving a channel.",
     inputSchema: z.object({}),
     run: () => {
-      const channels = client.channels.cache.values().filter((c): c is TextChannel => c.type === ChannelType.GuildText)
-      const renderedChannels = channels.map((channel) => `- ${channel.name} (${channel.id})`).toArray().join(`\n\n`)
-      return renderedChannels
+
+      const renderChildren = (channels: TextChannel[]) => {
+        return channels.map((c) => `- #${c.name} (${c.id})`).join('\n')
+      }
+
+      const categories = client.channels.cache.values().filter((c): c is CategoryChannel => c.type === ChannelType.GuildCategory).toArray().sort((a, b) => a.position - b.position)
+      const channelsByCategories = new Map<CategoryChannel | null, TextChannel[]>()
+      categories.forEach((c) => channelsByCategories.set(c, []))
+      const textChannels = client.channels.cache.values().filter((c): c is TextChannel => c.type === ChannelType.GuildText).toArray().sort((a, b) => a.position - b.position)
+      for (const channel of textChannels) {
+        const existing = channelsByCategories.get(channel.parent) ?? []
+        channelsByCategories.set(channel.parent, [...existing, channel])
+      }
+
+      return channelsByCategories.entries().map(([category, channels]) => `${category ? `${category.name} (${category.id})` : 'No Category'}\n${renderChildren(channels)}`).toArray().join('\n\n')
     }
   })
 }
+
+export function createCategoryTool(client: Client, guild: Guild) {
+  return makeTool({
+    name: 'create_category',
+    description:
+      'Create a new empty category by name and return its id, so you can then move channels into it. Fails if a category with that name already exists.',
+    inputSchema: z.object({
+      name: z.string().describe('The name for the new category.')
+    }),
+    run: async (args) => {
+      const existingNames = client.channels.cache.values().filter((c): c is CategoryChannel => c.type === ChannelType.GuildCategory).toArray().map((c) => c.name.toLowerCase())
+      if (existingNames.includes(args.name.toLowerCase())) {
+        throw new Error(`A category named "${args.name}" already exists.`)
+      }
+
+      const category = await guild.channels.create({
+        name: args.name,
+        type: ChannelType.GuildCategory
+      })
+
+      return `Created category "${args.name}" (${category.id}).`
+
+    }
+  })
+}
+
+export function deleteCategoryTool(client: Client) {
+  return makeTool({
+    name: 'delete_category',
+    description:
+      'Delete a category by id. Its channels are not deleted — they just become uncategorised. Reports how many were orphaned.',
+    inputSchema: z.object({
+      categoryId: z.string().describe('The id of the category to delete.')
+    }),
+    run: async ({ categoryId }) => {
+      const category = client.channels.cache.get(categoryId)
+      if (category?.type !== ChannelType.GuildCategory) {
+        throw new Error(`No category found with id ${categoryId}.`)
+      }
+      const orphaned = category.children.cache.size
+      const { name } = category
+      await category.delete()
+      return (
+        `Deleted category "${name}".` +
+        (orphaned ? ` ${orphaned} channel${orphaned === 1 ? '' : 's'} now uncategorised.` : '')
+      )
+    }
+  })
+}
+
+export function setChannelCategoryTool(client: Client) {
+  return makeTool({
+    name: 'set_channel_category',
+    description:
+      'Move a text channel into a category, or out of any category. Pass the channel id and the target category id (or null to remove it from its category). Get the ids from channel_tree.',
+    inputSchema: z.object({
+      channelId: z.string().describe('The id of the channel to move.'),
+      categoryId: z
+        .string()
+        .nullable()
+        .describe('The id of the category to move it into, or null to remove it from any category.')
+    }),
+    run: async ({ channelId, categoryId }) => {
+      const channel = client.channels.cache.get(channelId)
+      if (channel?.type !== ChannelType.GuildText) {
+        throw new Error(`No text channel found with id ${channelId}.`)
+      }
+      let categoryName: string | null = null
+      if (categoryId !== null) {
+        const category = client.channels.cache.get(categoryId)
+        if (category?.type !== ChannelType.GuildCategory) {
+          throw new Error(`No category found with id ${categoryId}.`)
+        }
+        categoryName = category.name
+      }
+      await channel.setParent(categoryId, { lockPermissions: false })
+      return categoryName
+        ? `Moved #${channel.name} into "${categoryName}".`
+        : `Removed #${channel.name} from its category.`
+    }
+  })
+}
+ 
 
 // export async function createReminderTool(client: Client) {
 //   return makeTool({
