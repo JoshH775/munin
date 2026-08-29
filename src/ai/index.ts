@@ -2,6 +2,7 @@ import 'dotenv/config'
 import Anthropic from '@anthropic-ai/sdk'
 import { match } from 'ts-pattern'
 import type { Tool } from './makeTool'
+import { log } from '../logger'
 
 function clientFor(model: string) {
   if (model.toLowerCase().includes('claude')) {
@@ -45,6 +46,7 @@ export async function turn(params: TurnParams): Promise<{
     cache_read_input_tokens: number
     cache_creation_input_tokens: number
   }
+  rounds: number
   truncated?: boolean
 }> {
   const {
@@ -63,6 +65,7 @@ export async function turn(params: TurnParams): Promise<{
   const definitions = tools.map((t) => t.definition)
 
   let ended = false
+  let rounds = 0
 
   const client = clientFor(model)
 
@@ -86,6 +89,7 @@ export async function turn(params: TurnParams): Promise<{
 
   // rounds are API round trips, not conversational turns
   for (let round = 0; round < 30; round++) {
+    rounds++
     onRoundStart?.()
     const stream = client.messages.stream({
       max_tokens: maxTokens,
@@ -132,13 +136,20 @@ export async function turn(params: TurnParams): Promise<{
         })
         .with({ type: 'tool_use' }, async (p) => {
           await onToolUse?.(p)
+          const toolStart = Date.now()
+          log.info(
+            { tool: p.name, input: JSON.stringify(p.input).slice(0, 140) },
+            'Tool call'
+          )
           try {
-            results.push({
-              type: 'tool_result',
-              tool_use_id: p.id,
-              content: await run(p.name, p.input)
-            })
+            const content = await run(p.name, p.input)
+            log.info(
+              { tool: p.name, ms: Date.now() - toolStart, chars: content.length },
+              'Tool ok'
+            )
+            results.push({ type: 'tool_result', tool_use_id: p.id, content })
           } catch (err) {
+            log.warn({ tool: p.name, ms: Date.now() - toolStart, err }, 'Tool failed')
             results.push({
               type: 'tool_result',
               tool_use_id: p.id,
@@ -157,24 +168,25 @@ export async function turn(params: TurnParams): Promise<{
     if (response.stop_reason === 'pause_turn') continue
 
     if (response.stop_reason === 'max_tokens') {
-      console.warn(`[turn] hit max_tokens (${maxTokens}) - output truncated`)
-      return { messages: conversation, ended: false, usage: usageTotals, truncated: true}
+      log.warn({ maxTokens }, 'Hit max_tokens, output truncated')
+      return { messages: conversation, ended: false, usage: usageTotals, rounds, truncated: true }
     }
 
     if (response.stop_reason !== 'tool_use') {
-      return { messages: conversation, ended: false, usage: usageTotals }
+      return { messages: conversation, ended: false, usage: usageTotals, rounds }
     }
 
     conversation.push({ role: 'user', content: results })
 
     if (ended)
-      return { ended: true, messages: conversation, usage: usageTotals }
+      return { ended: true, messages: conversation, usage: usageTotals, rounds }
   }
 
   return {
     messages: conversation,
     ended: false,
-    usage: usageTotals
+    usage: usageTotals,
+    rounds
   }
 }
 

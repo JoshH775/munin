@@ -130,9 +130,9 @@ export async function handleMuteInteraction(interaction: ChatInputCommandInterac
   const channelId = everywhere ? 'global' : interaction.channelId
   const muted = await toggleChannelMute(channelId)
   const scope = everywhere ? 'everywhere' : 'in this channel'
-  log.info({ channelId, muted }, `munin ${muted ? 'muted' : 'unmuted'} ${scope}`)
+  log.info({ channelId, muted }, `Munin ${muted ? 'muted' : 'unmuted'} ${scope}`)
   await interaction.reply({
-    content: `munin ${muted ? 'muted' : 'unmuted'} ${scope}`,
+    content: `Munin ${muted ? 'muted' : 'unmuted'} ${scope}`,
     flags: MessageFlags.Ephemeral
   })
 }
@@ -140,7 +140,7 @@ export async function handleMuteInteraction(interaction: ChatInputCommandInterac
 
 export async function handleEphemeralInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
   const on = await toggleEphemeral(interaction.channelId)
-  log.info({ channelId: interaction.channelId, ephemeral: on }, `channel ${on ? 'now' : 'no longer'} ephemeral`)
+  log.info({ channelId: interaction.channelId, ephemeral: on }, `Channel ${on ? 'now' : 'no longer'} ephemeral`)
   await interaction.reply({
     content: on
       ? 'This channel is now ephemeral. Messages clear about 5 minutes after the last one, and nothing here enters memory.'
@@ -158,7 +158,7 @@ export async function handleClearInteraction(interaction: ChatInputCommandIntera
   }
   const deleted = await channel.bulkDelete(count, true)
   await deleteMessages([...deleted.keys()])
-  log.info({ channelId: channel.id, deleted: deleted.size }, 'cleared messages')
+  log.info({ channelId: channel.id, deleted: deleted.size }, 'Cleared messages')
   await interaction.reply({
     content:
       `Deleted ${deleted.size} message${deleted.size === 1 ? '' : 's'}.` +
@@ -170,5 +170,5 @@ export async function handleClearInteraction(interaction: ChatInputCommandIntera
 export async function registerCommands(client: Client): Promise<void> {
   const json = commands.map((c) => c.toJSON())
   for (const guild of client.guilds.cache.values()) await guild.commands.set(json)
-  log.info({ guilds: client.guilds.cache.size, commands: commands.length }, 'slash commands registered')
+  log.info({ guilds: client.guilds.cache.size, commands: commands.length }, 'Slash commands registered')
 }

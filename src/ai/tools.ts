@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { makeTool } from './makeTool'
 import { updateMemory } from '../repositories/channelSettings'
 import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
+import { log } from '../logger'
 
 const apiKey = process.env.TAVILY_API_KEY
 const tavilyClient = apiKey ? tavily({ apiKey }) : null
@@ -64,10 +65,11 @@ export function tavilyExtractTool() {
         })
 
         const rows = results.map((r) => {
-          const content =
-            r.rawContent.length < 3000
-              ? r.rawContent
-              : `${r.rawContent.slice(0, 2950)}\n\n[content truncated]`
+          let content = r.rawContent
+          if (content.length >= 3000) {
+            log.warn({ url: r.url, chars: content.length }, 'Extract content truncated')
+            content = `${content.slice(0, 2950)}\n\n[content truncated]`
+          }
           return `${r.title} - ${r.url}\n\n${content}`
         })
         for (const f of failedResults) {

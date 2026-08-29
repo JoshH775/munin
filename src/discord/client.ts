@@ -83,7 +83,7 @@ client.on(Events.MessageCreate, async (message) => {
   try {
     log.info(
       { channelId, parentChannelId, user: message.author.username },
-      'message received'
+      'Message received'
     )
 
     await insertMessage({
@@ -101,7 +101,7 @@ client.on(Events.MessageCreate, async (message) => {
     ])
 
     if (!settings.enabled) {
-      log.info({ channelId }, 'channel disabled, ignoring message')
+      log.info({ channelId }, 'Channel disabled, ignoring message')
       return
     }
 
@@ -126,7 +126,8 @@ client.on(Events.MessageCreate, async (message) => {
     ]
       .filter(Boolean)
       .join('\n\n')
-    const { usage, truncated } = await turn({
+    const turnStart = Date.now()
+    const { usage, truncated, rounds } = await turn({
       messages: transcript,
       model: settings.model,
       effort: settings.effort,
@@ -140,7 +141,11 @@ client.on(Events.MessageCreate, async (message) => {
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
           .trim()
         if (!tidy) return
-        for (const part of splitForDiscord(tidy)) {
+        const parts = splitForDiscord(tidy)
+        if (parts.length > 1) {
+          log.info({ channelId, parts: parts.length }, 'Reply split across messages')
+        }
+        for (const part of parts) {
           const sent = await message.channel.send(part)
           await insertMessage({
             channel_id: channelId,
@@ -199,35 +204,50 @@ client.on(Events.MessageCreate, async (message) => {
 
     const channel = client.channels.cache.get(channelId)
     if (channel?.type === ChannelType.GuildText) {
-      if (channel.position !== 0) channel.setPosition(0).catch((err) => log.error({ err, channelId }, 'reorder failed'))
-      if (channel.parent && channel.parent.position !== 0) channel.parent.setPosition(0).catch((err) => log.error({ err, channelId }, 'reorder failed'))
+      if (channel.position !== 0) channel.setPosition(0).catch((err) => log.error({ err, channelId }, 'Reorder failed'))
+      if (channel.parent && channel.parent.position !== 0) channel.parent.setPosition(0).catch((err) => log.error({ err, channelId }, 'Reorder failed'))
     }
     
 
-    log.info({ channelId, parentChannelId }, 'replied')
+    log.info(
+      {
+        channelId,
+        model: settings.model,
+        effort: settings.effort,
+        rounds,
+        ms: Date.now() - turnStart,
+        tokens: {
+          in: usage.input_tokens,
+          out: usage.output_tokens,
+          cacheRead: usage.cache_read_input_tokens
+        },
+        ...(truncated ? { truncated: true } : {})
+      },
+      'Replied'
+    )
   } catch (err) {
-    log.error({ err, channelId, parentChannelId }, 'failed to handle message')
+    log.error({ err, channelId, parentChannelId }, 'Failed to handle message')
   }
 })
 
 client.on(Events.MessageDelete, (message) => {
-  log.info({ id: message.id }, 'message deleted')
+  log.info({ id: message.id }, 'Message deleted')
   deleteMessages([message.id])
 })
 
 client.on(Events.MessageBulkDelete, (messages) => {
-  log.info({ count: messages.size }, 'bulk delete')
+  log.info({ count: messages.size }, 'Bulk delete')
   deleteMessages([...messages.keys()])
 })
 
 client.on(Events.ThreadDelete, async (thread) => {
-  log.info({ threadId: thread.id }, 'thread deleted')
+  log.info({ threadId: thread.id }, 'Thread deleted')
   await deleteChannelMessages(thread.id)
   await deleteSettings([thread.id])
 })
 
 client.on(Events.ChannelDelete, async (channel) => {
-  log.info({ channelId: channel.id }, 'channel deleted')
+  log.info({ channelId: channel.id }, 'Channel deleted')
   await deleteChannelMessages(channel.id)
   await deleteSettings([channel.id])
 })
@@ -244,29 +264,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .with('clear', () => handleClearInteraction(interaction))
       .otherwise(async () => {})
   } catch (err) {
-    log.error({ err, command: interaction.commandName }, 'interaction failed')
+    log.error({ err, command: interaction.commandName }, 'Interaction failed')
   }
 })
 
 client.once(Events.ClientReady, async (c) => {
-  log.info({ tag: c.user.tag }, 'logged in')
+  log.info({ tag: c.user.tag }, 'Logged in')
   try {
     await registerCommands(client)
     await backfill()
     ready = true
     new Cron(
       '* * * * *',
-      { catch: (err) => log.error({ err }, 'ephemeral sweep failed') },
+      { catch: (err) => log.error({ err }, 'Ephemeral sweep failed') },
       () => sweepEphemeral(client)
     )
   } catch (err) {
-    log.fatal({ err }, 'startup failed, exiting')
+    log.fatal({ err }, 'Startup failed, exiting')
     process.exit(1)
   }
 })
 
 async function backfill(): Promise<void> {
-  log.info('backfilling messages')
+  log.info('Backfilling messages')
   const start = Date.now()
   const inserts: Promise<void>[] = []
   let channelCount = 0
@@ -327,6 +347,6 @@ async function backfill(): Promise<void> {
       guilds: guildCount,
       ms: Date.now() - start
     },
-    'backfill complete'
+    'Backfill complete'
   )
 }

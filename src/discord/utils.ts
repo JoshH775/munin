@@ -56,7 +56,7 @@ export async function sweepEphemeral(client: Client): Promise<void> {
     const deleted = await channel.bulkDelete(100, true)
     if (deleted.size > 0) {
       await deleteMessages([...deleted.keys()])
-      log.info({ channelId, cleared: deleted.size }, 'swept ephemeral channel')
+      log.info({ channelId, cleared: deleted.size }, 'Swept ephemeral channel')
     }
   }
 }
