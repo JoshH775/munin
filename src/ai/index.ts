@@ -2,6 +2,7 @@ import 'dotenv/config'
 import Anthropic from '@anthropic-ai/sdk'
 import { match } from 'ts-pattern'
 import type { Tool } from './makeTool'
+import { executeTool } from './executeTool'
 import { log } from '../logger'
 
 function clientFor(model: string) {
@@ -66,17 +67,9 @@ export async function turn(params: TurnParams): Promise<{
 
   let ended = false
   let rounds = 0
+  let tainted = false
 
   const client = clientFor(model)
-
-  const run = async (name: string, input: unknown) => {
-    const tool = tools.find((t) => t.definition.name === name)
-    if (!tool) throw new Error(`Tool not found: ${name}`)
-    const content = await tool.run(input)
-    // only on success, so a terminal tool that threw leaves the model room to recover
-    if (tool.terminal) ended = true
-    return content
-  }
 
   const conversation = [...messages]
 
@@ -136,27 +129,10 @@ export async function turn(params: TurnParams): Promise<{
         })
         .with({ type: 'tool_use' }, async (p) => {
           await onToolUse?.(p)
-          const toolStart = Date.now()
-          log.info(
-            { tool: p.name, input: JSON.stringify(p.input).slice(0, 140) },
-            'Tool call'
-          )
-          try {
-            const content = await run(p.name, p.input)
-            log.info(
-              { tool: p.name, ms: Date.now() - toolStart, chars: content.length },
-              'Tool ok'
-            )
-            results.push({ type: 'tool_result', tool_use_id: p.id, content })
-          } catch (err) {
-            log.warn({ tool: p.name, ms: Date.now() - toolStart, err }, 'Tool failed')
-            results.push({
-              type: 'tool_result',
-              tool_use_id: p.id,
-              content: String(err),
-              is_error: true
-            })
-          }
+          const outcome = await executeTool(tools, p, tainted)
+          results.push(outcome.result)
+          tainted ||= outcome.tainted
+          ended ||= outcome.ended
         })
         .with({ type: 'thinking' }, () => {
           onThinking?.()
@@ -169,11 +145,22 @@ export async function turn(params: TurnParams): Promise<{
 
     if (response.stop_reason === 'max_tokens') {
       log.warn({ maxTokens }, 'Hit max_tokens, output truncated')
-      return { messages: conversation, ended: false, usage: usageTotals, rounds, truncated: true }
+      return {
+        messages: conversation,
+        ended: false,
+        usage: usageTotals,
+        rounds,
+        truncated: true
+      }
     }
 
     if (response.stop_reason !== 'tool_use') {
-      return { messages: conversation, ended: false, usage: usageTotals, rounds }
+      return {
+        messages: conversation,
+        ended: false,
+        usage: usageTotals,
+        rounds
+      }
     }
 
     conversation.push({ role: 'user', content: results })
@@ -191,7 +178,12 @@ export async function turn(params: TurnParams): Promise<{
 }
 
 export async function listModelIds(): Promise<string[]> {
-  const ids = ['zai-org/GLM-5', 'zai-org/GLM-5.2', 'moonshotai/Kimi-K2.6', 'Qwen/Qwen3.5-397B-A17B']
+  const ids = [
+    'zai-org/GLM-5',
+    'zai-org/GLM-5.2',
+    'moonshotai/Kimi-K2.6',
+    'Qwen/Qwen3.5-397B-A17B'
+  ]
   if (process.env.ANTHROPIC_API_KEY) {
     for await (const model of new Anthropic().models.list({ limit: 1000 })) {
       if (model.id.startsWith('claude-')) ids.push(model.id)
