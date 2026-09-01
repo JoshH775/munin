@@ -20,6 +20,11 @@ export interface _Migrations {
   name: string;
 }
 
+export interface AppSettings {
+  id: Generated<boolean>;
+  reminder_channel_id: string | null;
+}
+
 export interface ChannelSettings {
   channel_id: string;
   created_at: Generated<Timestamp>;
@@ -42,6 +47,17 @@ export interface Messages {
   user_name: string;
 }
 
+export interface Reminders {
+  channel_id: string;
+  content: string;
+  created_at: Generated<Timestamp>;
+  date: Timestamp;
+  id: Generated<string>;
+  received: Generated<boolean>;
+  status: Generated<string>;
+  target: string | null;
+}
+
 export interface Usage {
   cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
@@ -56,7 +72,9 @@ export interface Usage {
 
 export interface DB {
   _migrations: _Migrations;
+  app_settings: AppSettings;
   channel_settings: ChannelSettings;
   messages: Messages;
+  reminders: Reminders;
   usage: Usage;
 }
