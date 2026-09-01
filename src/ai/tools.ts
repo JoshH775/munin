@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { tavily } from '@tavily/core'
+import { normalizeUrl } from '../urls'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -8,12 +9,13 @@ import { makeTool } from './makeTool'
 import { updateMemory } from '../repositories/channelSettings'
 import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
 import { log } from '../logger'
+import { insertNewReminder, cancelReminder, getPendingReminders } from '../repositories/reminders'
 
 const apiKey = process.env.TAVILY_API_KEY
 const tavilyClient = apiKey ? tavily({ apiKey }) : null
 
 // Client-side web search via Tavily. Returns clean, ranked snippets; the SDK types the response.
-export function tavilySearchTool() {
+export function tavilySearchTool(trustedUrls: Set<string>) {
   return makeTool({
     name: 'web_search',
     description:
@@ -32,6 +34,11 @@ export function tavilySearchTool() {
           maxResults: 6
         })
         if (results.length === 0) return `No results for "${query}".`
+
+        for (const r of results) {
+          const norm = normalizeUrl(r.url)
+          if (norm) trustedUrls.add(norm)
+        }
         return results
           .map((r) => `${r.title} (score ${r.score.toFixed(2)})\n${r.url}\n${r.content}`)
           .join('\n\n')
@@ -39,18 +46,21 @@ export function tavilySearchTool() {
         console.error('Tavily search failed', err)
         return `Web search failed: ${String(err)}`
       }
-    }
+    },
+    readsUntrusted: true
   })
 }
 
-export function tavilyExtractTool() {
+export function tavilyExtractTool(trustedUrls: Set<string>) {
   return makeTool({
     name: 'web_extract',
     description:
       'Open one or more web pages by URL and read their real content, beyond the snippet a ' +
       'search returns. Use it to verify a detail or read something in full when a snippet is ' +
       'ambiguous or not enough. Pass several URLs to cross-check a claim across sources, and pass ' +
-      'what you are checking as `query` to focus on the relevant parts of each page.',
+      'what you are checking as `query` to focus on the relevant parts of each page. You can ' +
+      'only open URLs that came from a web_search result or that the user shared, so search ' +
+      'first when you need a page you do not yet have a URL for.',
     inputSchema: z.object({
       urls: z.array(z.url()),
       query: z.string().optional()
@@ -58,8 +68,19 @@ export function tavilyExtractTool() {
     run: async ({ urls, query }) => {
       if (!tavilyClient) return 'Web search is unavailable: TAVILY_API_KEY is not set.'
 
+      const allowed: string[] = []
+      const blocked: string[] = []
+      for (const u of urls) {
+        const norm = normalizeUrl(u)
+        if (norm && trustedUrls.has(norm)) allowed.push(u)
+        else blocked.push(u)
+      }
+      if (allowed.length === 0) {
+        return `Refused: none of those URLs came from a search result or the conversation, so they can't be opened. Run web_search first, then extract from the URLs it returns. Blocked: ${blocked.join(', ')}`
+      }
+
       try {
-        const { results, failedResults } = await tavilyClient.extract(urls, {
+        const { results, failedResults } = await tavilyClient.extract(allowed, {
           format: 'markdown',
           ...(query ? { query, chunksPerSource: 5 } : {})
         })
@@ -75,15 +96,17 @@ export function tavilyExtractTool() {
         for (const f of failedResults) {
           rows.push(`${f.url}\n\nCouldn't open: ${f.error}`)
         }
+        if (blocked.length) {
+          rows.push(`Refused (not from a search result or the conversation): ${blocked.join(', ')}`)
+        }
         return rows.length ? rows.join('\n\n') : 'No content returned.'
 
       } catch (err) {
         console.error('Tavily extract failed', err)
         return `Web extraction failed: ${String(err)}`
       }
-        
-    
-    }
+    },
+    readsUntrusted: true
   })
 }
 
@@ -190,7 +213,9 @@ export function startWorkTool(channelName: string) {
         `/plan ${task}`
       ])
       return `Launched an interactive Claude Code session in ${dir} (tmux session ${session}) to plan: ${task}. Attach with \`tmux attach -t ${session}\` to watch or continue.`
-    }
+    },
+    // Launches an arbitrary Claude Code session: the strongest arbitrary-outreach tool there is.
+    arbitraryOutreach: true
   })
 }
 
@@ -303,17 +328,66 @@ export function setChannelCategoryTool(client: Client) {
 }
  
 
-// export async function createReminderTool(client: Client) {
+// export function createReminderTool(client: Client, setById: string) {
 //   return makeTool({
-//     name: '',
-//     description: '',
+//     name: 'set_reminder',
+//     description:
+//       'Schedule a one-off message to be posted in a channel at a future time. Give the time as a ' +
+//       'UTC ISO 8601 datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is ' +
+//       'in your context, so work forward from that. It fires within about a minute of the given time. ' +
+//       'Pass the id of the text channel to post in (use channel_tree to find ids). Returns the ' +
+//       "reminder's id, which delete_reminder needs to cancel it.",
 //     inputSchema: z.object({
-//       date: z.ZodISODate(),
-//       reminderText: z.string().max(1800),
-//       channelId: z.string()
+//       date: z.iso.datetime().describe('When to fire, as a UTC ISO 8601 datetime ending in Z.'),
+//       content: z.string().max(1800).describe('The reminder message to post.'),
+//       channelId: z.string().describe('The id of the text channel to post the reminder in.')
 //     }),
-//     run: (args) => {
-//       const job = new Cron({})
+//     run: async ({ channelId, content, date }) => {
+//       const isGuildText = client.channels.cache
+//         .values()
+//         .filter((c): c is TextChannel => c.type === ChannelType.GuildText)
+//         .toArray()
+//         .some((c) => c.id === channelId)
+//       if (!isGuildText) {
+//         throw new Error(
+//           'No text channel with that id. Call channel_tree for the list of channels and ids.'
+//         )
+//       }
+//       const { id } = await insertNewReminder({ channel_id: channelId, content, date, target: setById })
+//       return `Reminder set for ${date} in <#${channelId}> (id ${id}).`
+//     }
+//   })
+// }
+
+// export function deleteReminderTool() {
+//   return makeTool({
+//     name: 'delete_reminder',
+//     description:
+//       'Cancel a pending reminder by its id so it never fires. The id is the one set_reminder ' +
+//       'returned. Does nothing if the reminder has already fired or the id is unknown.',
+//     inputSchema: z.object({
+//       id: z.uuid().describe('The id of the reminder to cancel.')
+//     }),
+//     run: async ({ id }) => {
+//       const cancelled = await cancelReminder(id)
+//       return cancelled > 0 ? `Cancelled reminder ${id}.` : `No pending reminder with id ${id}.`
+//     }
+//   })
+// }
+
+// export function listRemindersTool() {
+//   return makeTool({
+//     name: 'list_reminders',
+//     description:
+//       'List every pending reminder with its id, time, channel, and content, so you can tell the ' +
+//       'user what is scheduled or find the id to cancel one with delete_reminder.',
+//     inputSchema: z.object({}),
+//     run: async () => {
+//       const reminders = await getPendingReminders()
+//       if (reminders.length === 0) return 'No pending reminders.'
+//       return reminders
+//         .map((r) => `${r.id} — ${r.date.toISOString()} — <#${r.channel_id}> — ${r.content}`)
+//         .join('\n')
 //     }
 //   })
 // }
