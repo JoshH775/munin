@@ -7,10 +7,11 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { makeTool } from './makeTool'
 import { updateMemory } from '../repositories/channelSettings'
-import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
+import { CategoryChannel, ChannelType, Guild, TextChannel, type AnyThreadChannel, type Client } from 'discord.js'
 import { log } from '../logger'
 import { insertNewReminder, cancelReminder, getPendingReminders } from '../repositories/reminders'
 import { getAppSettings } from '../repositories/appSettings'
+import { getAllThreads } from '../discord/utils'
 
 const apiKey = process.env.TAVILY_API_KEY
 const tavilyClient = apiKey ? tavily({ apiKey }) : null
@@ -220,22 +221,31 @@ export function startWorkTool(channelName: string) {
   })
 }
 
-export function channelTreeTool(client: Client) {
+export function channelTreeTool(client: Client, guild: Guild) {
   return makeTool({
     name: 'channel_tree',
     description:
-      "Show the server's channels grouped by category, each channel and category with its id. Reach for it to see what exists and grab the ids you need before linking a channel with `<#id>`, creating or deleting a category, or moving a channel.",
+      "Show the server's channels grouped by category, each channel and category with its id, and any threads nested under their channel. Reach for it to see what exists and grab the ids you need before linking a channel or thread with `<#id>`, creating or deleting a category, or moving a channel.",
     inputSchema: z.object({}),
-    run: () => {
+    run: async () => {
+
+      const threads = await getAllThreads(guild)
+      const textChannels = client.channels.cache.values().filter((c): c is TextChannel => c.type === ChannelType.GuildText).toArray().sort((a, b) => a.position - b.position)
+
+      const threadsFor = (channel: TextChannel) => {
+        return threads.filter((t) => t.parentId === channel.id)
+      }
 
       const renderChildren = (channels: TextChannel[]) => {
-        return channels.map((c) => `- #${c.name} (${c.id})`).join('\n')
+        return channels.map((c) => {
+          const threadLines = threadsFor(c).map((t) => `    - ${t.name} (${t.id})`)
+          return [`- #${c.name} (${c.id})`, ...threadLines].join('\n')
+        }).join('\n')
       }
 
       const categories = client.channels.cache.values().filter((c): c is CategoryChannel => c.type === ChannelType.GuildCategory).toArray().sort((a, b) => a.position - b.position)
       const channelsByCategories = new Map<CategoryChannel | null, TextChannel[]>()
       categories.forEach((c) => channelsByCategories.set(c, []))
-      const textChannels = client.channels.cache.values().filter((c): c is TextChannel => c.type === ChannelType.GuildText).toArray().sort((a, b) => a.position - b.position)
       for (const channel of textChannels) {
         const existing = channelsByCategories.get(channel.parent) ?? []
         channelsByCategories.set(channel.parent, [...existing, channel])

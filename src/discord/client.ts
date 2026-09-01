@@ -124,13 +124,12 @@ client.on(Events.MessageCreate, async (message) => {
         : [updateMemoryTool(channelId, parentChannelId)]),
       tavilySearchTool(trustedUrls),
       tavilyExtractTool(trustedUrls),
-      channelTreeTool(client),
       createReminderTool(client, message.author.id),
       deleteReminderTool(),
       listRemindersTool(),
       deleteCategoryTool(client),
       setChannelCategoryTool(client),
-      ...(message.guild ? [createCategoryTool(client, message.guild)] : [])
+      ...(message.guild ? [createCategoryTool(client, message.guild), channelTreeTool(client, message.guild)] : [])
     ]
     const toolNames = new Set(tools.map((t) => t.definition.name))
     const systemSuffix = [
