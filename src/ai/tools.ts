@@ -328,66 +328,66 @@ export function setChannelCategoryTool(client: Client) {
 }
  
 
-// export function createReminderTool(client: Client, setById: string) {
-//   return makeTool({
-//     name: 'set_reminder',
-//     description:
-//       'Schedule a one-off message to be posted in a channel at a future time. Give the time as a ' +
-//       'UTC ISO 8601 datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is ' +
-//       'in your context, so work forward from that. It fires within about a minute of the given time. ' +
-//       'Pass the id of the text channel to post in (use channel_tree to find ids). Returns the ' +
-//       "reminder's id, which delete_reminder needs to cancel it.",
-//     inputSchema: z.object({
-//       date: z.iso.datetime().describe('When to fire, as a UTC ISO 8601 datetime ending in Z.'),
-//       content: z.string().max(1800).describe('The reminder message to post.'),
-//       channelId: z.string().describe('The id of the text channel to post the reminder in.')
-//     }),
-//     run: async ({ channelId, content, date }) => {
-//       const isGuildText = client.channels.cache
-//         .values()
-//         .filter((c): c is TextChannel => c.type === ChannelType.GuildText)
-//         .toArray()
-//         .some((c) => c.id === channelId)
-//       if (!isGuildText) {
-//         throw new Error(
-//           'No text channel with that id. Call channel_tree for the list of channels and ids.'
-//         )
-//       }
-//       const { id } = await insertNewReminder({ channel_id: channelId, content, date, target: setById })
-//       return `Reminder set for ${date} in <#${channelId}> (id ${id}).`
-//     }
-//   })
-// }
+export function createReminderTool(client: Client, setById: string) {
+  return makeTool({
+    name: 'set_reminder',
+    description:
+      'Schedule a one-off message to be posted in a channel at a future time. Give the time as a ' +
+      'UTC ISO 8601 datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is ' +
+      'in your context, so work forward from that. It fires within about a minute of the given time. ' +
+      'Pass the id of the text channel to post in (use channel_tree to find ids). Returns the ' +
+      "reminder's id, which delete_reminder needs to cancel it.",
+    inputSchema: z.object({
+      date: z.iso.datetime().describe('When to fire, as a UTC ISO 8601 datetime ending in Z.'),
+      content: z.string().max(1800).describe('The reminder message to post.'),
+      channelId: z.string().describe('The id of the text channel to post the reminder in.')
+    }),
+    run: async ({ channelId, content, date }) => {
+      const isGuildText = client.channels.cache
+        .values()
+        .filter((c): c is TextChannel => c.type === ChannelType.GuildText)
+        .toArray()
+        .some((c) => c.id === channelId)
+      if (!isGuildText) {
+        throw new Error(
+          'No text channel with that id. Call channel_tree for the list of channels and ids.'
+        )
+      }
+      const { id } = await insertNewReminder({ channel_id: channelId, content, date, target: setById })
+      return `Reminder set for ${date} in <#${channelId}> (id ${id}).`
+    }
+  })
+}
 
-// export function deleteReminderTool() {
-//   return makeTool({
-//     name: 'delete_reminder',
-//     description:
-//       'Cancel a pending reminder by its id so it never fires. The id is the one set_reminder ' +
-//       'returned. Does nothing if the reminder has already fired or the id is unknown.',
-//     inputSchema: z.object({
-//       id: z.uuid().describe('The id of the reminder to cancel.')
-//     }),
-//     run: async ({ id }) => {
-//       const cancelled = await cancelReminder(id)
-//       return cancelled > 0 ? `Cancelled reminder ${id}.` : `No pending reminder with id ${id}.`
-//     }
-//   })
-// }
+export function deleteReminderTool() {
+  return makeTool({
+    name: 'delete_reminder',
+    description:
+      'Cancel a pending reminder by its id so it never fires. The id is the one set_reminder ' +
+      'returned. Does nothing if the reminder has already fired or the id is unknown.',
+    inputSchema: z.object({
+      id: z.uuid().describe('The id of the reminder to cancel.')
+    }),
+    run: async ({ id }) => {
+      const cancelled = await cancelReminder(id)
+      return cancelled > 0 ? `Cancelled reminder ${id}.` : `No pending reminder with id ${id}.`
+    }
+  })
+}
 
-// export function listRemindersTool() {
-//   return makeTool({
-//     name: 'list_reminders',
-//     description:
-//       'List every pending reminder with its id, time, channel, and content, so you can tell the ' +
-//       'user what is scheduled or find the id to cancel one with delete_reminder.',
-//     inputSchema: z.object({}),
-//     run: async () => {
-//       const reminders = await getPendingReminders()
-//       if (reminders.length === 0) return 'No pending reminders.'
-//       return reminders
-//         .map((r) => `${r.id} — ${r.date.toISOString()} — <#${r.channel_id}> — ${r.content}`)
-//         .join('\n')
-//     }
-//   })
-// }
+export function listRemindersTool() {
+  return makeTool({
+    name: 'list_reminders',
+    description:
+      'List every pending reminder with its id, time, channel, and content, so you can tell the ' +
+      'user what is scheduled or find the id to cancel one with delete_reminder.',
+    inputSchema: z.object({}),
+    run: async () => {
+      const reminders = await getPendingReminders()
+      if (reminders.length === 0) return 'No pending reminders.'
+      return reminders
+        .map((r) => `${r.id} — ${r.date.toISOString()} — <#${r.channel_id}> — ${r.content}`)
+        .join('\n')
+    }
+  })
+}
