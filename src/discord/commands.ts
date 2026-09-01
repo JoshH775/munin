@@ -13,6 +13,7 @@ import {
   updateConfig
 } from '../repositories/channelSettings'
 import { deleteMessages } from '../repositories/messages'
+import { setReminderChannel } from '../repositories/appSettings'
 import { log } from '../logger'
 
 const DEFAULT = '__default__' // choice value meaning "clear the override"
@@ -62,7 +63,11 @@ const clear = new SlashCommandBuilder()
       .setMaxValue(100)
   )
 
-const commands = [config, settings, memory, mute, ephemeral, clear]
+const reminderChannel = new SlashCommandBuilder()
+  .setName('reminder-channel')
+  .setDescription('Make this channel the default channel for reminders')
+
+const commands = [config, settings, memory, mute, ephemeral, clear, reminderChannel]
 
 
 
@@ -163,6 +168,22 @@ export async function handleClearInteraction(interaction: ChatInputCommandIntera
     content:
       `Deleted ${deleted.size} message${deleted.size === 1 ? '' : 's'}.` +
       (deleted.size < count ? " (Messages older than 14 days can't be bulk-deleted.)" : ''),
+    flags: MessageFlags.Ephemeral
+  })
+}
+
+export async function handleReminderChannelInteraction(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  const channel = interaction.channel
+  if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+    await interaction.reply({ content: 'Pick a server text channel.', flags: MessageFlags.Ephemeral })
+    return
+  }
+  await setReminderChannel(interaction.channelId)
+  log.info({ channelId: interaction.channelId }, 'Reminder channel set')
+  await interaction.reply({
+    content: `Reminders will default to <#${interaction.channelId}>.`,
     flags: MessageFlags.Ephemeral
   })
 }

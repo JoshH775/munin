@@ -33,6 +33,7 @@ import {
   handleEphemeralInteraction,
   handleMemoryInteraction,
   handleMuteInteraction,
+  handleReminderChannelInteraction,
   handleSettingsInteraction,
   registerCommands
 } from './commands'
@@ -289,6 +290,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .with('mute', () => handleMuteInteraction(interaction))
       .with('ephemeral', () => handleEphemeralInteraction(interaction))
       .with('clear', () => handleClearInteraction(interaction))
+      .with('reminder-channel', () => handleReminderChannelInteraction(interaction))
       .otherwise(async () => {})
   } catch (err) {
     log.error({ err, command: interaction.commandName }, 'Interaction failed')
