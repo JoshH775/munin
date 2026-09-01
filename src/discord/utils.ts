@@ -13,6 +13,7 @@ import {
 import { listEphemeralChannelIds } from '../repositories/channelSettings'
 import { deleteMessages, getLatestMessage, insertMessage } from '../repositories/messages'
 import { getDueReminders, markReminderSent } from '../repositories/reminders'
+import { getAppSettings } from '../repositories/appSettings'
 import { log } from '../logger'
 
 export async function fetchAllMessages(
@@ -66,16 +67,22 @@ export async function sweepEphemeral(client: Client): Promise<void> {
   }
 }
 
-// Poll for due reminders and deliver each: ping the setter, post the embed + ack button.
+
 export async function dispatchReminders(client: Client): Promise<void> {
-  for (const reminder of await getDueReminders()) {
-    const channel = await client.channels.fetch(reminder.channel_id).catch(() => null)
+  const due = await getDueReminders()
+  if (due.length === 0) return
+
+  const { reminder_channel_id } = await getAppSettings()
+
+  for (const reminder of due) {
+    const targetChannelId = reminder.channel_id ?? reminder_channel_id
+    if (!targetChannelId) {
+      log.warn({ reminderId: reminder.id }, 'Reminder has no channel and no default set')
+      continue
+    }
+    const channel = await client.channels.fetch(targetChannelId).catch(() => null)
     if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-      await markReminderSent(reminder.id) // channel is gone; don't retry forever
-      log.warn(
-        { reminderId: reminder.id, channelId: reminder.channel_id },
-        'Reminder channel unavailable, marking sent'
-      )
+      log.warn({ reminderId: reminder.id, targetChannelId }, 'Reminder channel unavailable')
       continue
     }
     const embed = new EmbedBuilder().setTitle('⏰ Reminder').setDescription(reminder.content)
@@ -85,21 +92,26 @@ export async function dispatchReminders(client: Client): Promise<void> {
         .setLabel('Got it')
         .setStyle(ButtonStyle.Success)
     )
-    const sent = await channel.send({
-      content: reminder.target ? `<@${reminder.target}>` : undefined,
-      embeds: [embed],
-      components: [row]
-    })
-    await insertMessage({
-      channel_id: reminder.channel_id,
-      content: `⏰ ${reminder.content}`,
-      user_id: client.user!.id,
-      user_name: 'munin',
-      id: sent.id,
-      sent_at: sent.createdAt
-    })
-    await markReminderSent(reminder.id)
-    log.info({ reminderId: reminder.id, channelId: reminder.channel_id }, 'Reminder delivered')
+    try {
+      const sent = await channel.send({
+        content: reminder.target ? `<@${reminder.target}>` : undefined,
+        embeds: [embed],
+        components: [row]
+      })
+      await insertMessage({
+        channel_id: targetChannelId,
+        content: `⏰ ${reminder.content}`,
+        user_id: client.user!.id,
+        user_name: 'munin',
+        id: sent.id,
+        sent_at: sent.createdAt
+      })
+      await markReminderSent(reminder.id)
+      log.info({ reminderId: reminder.id }, 'Reminder delivered')
+    } catch (err) {
+      // Leave it pending so the next poll retries; don't mark sent on failure.
+      log.error({ err, reminderId: reminder.id }, 'Reminder delivery failed')
+    }
   }
 }
 
