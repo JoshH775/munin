@@ -6,6 +6,8 @@ export interface Tool<TSchema extends z.ZodType> {
   schema: TSchema
   run: (args: unknown) => Promise<string>
   terminal?: boolean
+  readsUntrusted?: boolean
+  arbitraryOutreach?: boolean
 }
 
 export function makeTool<TSchema extends z.ZodType>(params: {
@@ -14,8 +16,10 @@ export function makeTool<TSchema extends z.ZodType>(params: {
   inputSchema: TSchema
   run: (args: z.infer<TSchema>) => string | Promise<string>
   terminal?: boolean
+  readsUntrusted?: boolean
+  arbitraryOutreach?: boolean
 }): Tool<TSchema> {
-  const { name, description, inputSchema, terminal } = params
+  const { name, description, inputSchema, terminal, arbitraryOutreach, readsUntrusted } = params
   return {
     definition: {
       name,
@@ -25,5 +29,7 @@ export function makeTool<TSchema extends z.ZodType>(params: {
     schema: inputSchema,
     run: async (args) => params.run(inputSchema.parse(args)),
     terminal,
+    arbitraryOutreach,
+    readsUntrusted
   }
 }
