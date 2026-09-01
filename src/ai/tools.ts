@@ -10,6 +10,7 @@ import { updateMemory } from '../repositories/channelSettings'
 import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
 import { log } from '../logger'
 import { insertNewReminder, cancelReminder, getPendingReminders } from '../repositories/reminders'
+import { getAppSettings } from '../repositories/appSettings'
 
 const apiKey = process.env.TAVILY_API_KEY
 const tavilyClient = apiKey ? tavily({ apiKey }) : null
@@ -330,31 +331,36 @@ export function setChannelCategoryTool(client: Client) {
 
 export function createReminderTool(client: Client, setById: string) {
   return makeTool({
-    name: 'set_reminder',
+    name: 'create_reminder',
     description:
-      'Schedule a one-off message to be posted in a channel at a future time. Give the time as a ' +
-      'UTC ISO 8601 datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is ' +
-      'in your context, so work forward from that. It fires within about a minute of the given time. ' +
-      'Pass the id of the text channel to post in (use channel_tree to find ids). Returns the ' +
-      "reminder's id, which delete_reminder needs to cancel it.",
+      'Schedule a one-off reminder to post at a future time. Give the time as a UTC ISO 8601 ' +
+      'datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is in your context, ' +
+      'so work forward from that. It fires within about a minute of the given time. Pass channelId ' +
+      'to post it in a specific channel (use channel_tree for ids); omit it to use the default ' +
+      "reminder channel. Returns the reminder's id, which delete_reminder needs to cancel it.",
     inputSchema: z.object({
       date: z.iso.datetime().describe('When to fire, as a UTC ISO 8601 datetime ending in Z.'),
       content: z.string().max(1800).describe('The reminder message to post.'),
-      channelId: z.string().describe('The id of the text channel to post the reminder in.')
+      channelId: z
+        .string()
+        .optional()
+        .describe('Channel to post in. Omit to use the default reminder channel.')
     }),
-    run: async ({ channelId, content, date }) => {
-      const isGuildText = client.channels.cache
-        .values()
-        .filter((c): c is TextChannel => c.type === ChannelType.GuildText)
-        .toArray()
-        .some((c) => c.id === channelId)
-      if (!isGuildText) {
+    run: async ({ content, date, channelId }) => {
+      if (channelId) {
+        const isGuildText = client.channels.cache
+          .values()
+          .some((c) => c.id === channelId && c.type === ChannelType.GuildText)
+        if (!isGuildText) {
+          throw new Error('No text channel with that id. Call channel_tree for the list of ids.')
+        }
+      } else if (!(await getAppSettings()).reminder_channel_id) {
         throw new Error(
-          'No text channel with that id. Call channel_tree for the list of channels and ids.'
+          'No channelId given and no default reminder channel is set. Pass a channelId or ask the user to run /reminder-channel.'
         )
       }
-      const { id } = await insertNewReminder({ channel_id: channelId, content, date, target: setById })
-      return `Reminder set for ${date} in <#${channelId}> (id ${id}).`
+      const { id } = await insertNewReminder({ content, date, channel_id: channelId ?? null, target: setById })
+      return `Reminder set for ${date}${channelId ? ` in <#${channelId}>` : ''} (id ${id}).`
     }
   })
 }
@@ -363,7 +369,7 @@ export function deleteReminderTool() {
   return makeTool({
     name: 'delete_reminder',
     description:
-      'Cancel a pending reminder by its id so it never fires. The id is the one set_reminder ' +
+      'Cancel a pending reminder by its id so it never fires. The id is the one create_reminder ' +
       'returned. Does nothing if the reminder has already fired or the id is unknown.',
     inputSchema: z.object({
       id: z.uuid().describe('The id of the reminder to cancel.')
@@ -386,7 +392,7 @@ export function listRemindersTool() {
       const reminders = await getPendingReminders()
       if (reminders.length === 0) return 'No pending reminders.'
       return reminders
-        .map((r) => `${r.id} — ${r.date.toISOString()} — <#${r.channel_id}> — ${r.content}`)
+        .map((r) => `${r.id} — ${r.date.toISOString()} — ${r.channel_id ? `<#${r.channel_id}>` : 'default channel'} — ${r.content}`)
         .join('\n')
     }
   })
