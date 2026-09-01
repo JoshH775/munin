@@ -48,14 +48,13 @@ export async function markReminderReceived(id: string): Promise<void> {
     .execute()
 }
 
-// Soft-cancel: keep the row as 'cancelled' so it never fires. Returns rows changed
+// Delete a pending reminder outright so it never fires. Returns rows removed
 // (0 if the id is unknown or the reminder has already fired).
-export async function cancelReminder(id: string): Promise<number> {
+export async function deleteReminder(id: string): Promise<number> {
   const res = await db
-    .updateTable('reminders')
-    .set({ status: 'cancelled' })
+    .deleteFrom('reminders')
     .where('id', '=', id)
     .where('status', '=', 'pending')
     .executeTakeFirst()
-  return Number(res?.numUpdatedRows ?? 0)
+  return Number(res?.numDeletedRows ?? 0)
 }

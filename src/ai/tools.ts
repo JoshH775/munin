@@ -9,7 +9,7 @@ import { makeTool } from './makeTool'
 import { updateMemory } from '../repositories/channelSettings'
 import { CategoryChannel, ChannelType, Guild, TextChannel, type AnyThreadChannel, type Client } from 'discord.js'
 import { log } from '../logger'
-import { insertNewReminder, cancelReminder, getPendingReminders } from '../repositories/reminders'
+import { insertNewReminder, deleteReminder, getPendingReminders } from '../repositories/reminders'
 import { getAppSettings } from '../repositories/appSettings'
 import { getAllThreads } from '../discord/utils'
 
@@ -377,14 +377,14 @@ export function deleteReminderTool() {
   return makeTool({
     name: 'delete_reminder',
     description:
-      'Cancel a pending reminder by its id so it never fires. The id is the one create_reminder ' +
+      'Delete a pending reminder by its id so it never fires. The id is the one create_reminder ' +
       'returned. Does nothing if the reminder has already fired or the id is unknown.',
     inputSchema: z.object({
-      id: z.uuid().describe('The id of the reminder to cancel.')
+      id: z.uuid().describe('The id of the reminder to delete.')
     }),
     run: async ({ id }) => {
-      const cancelled = await cancelReminder(id)
-      return cancelled > 0 ? `Cancelled reminder ${id}.` : `No pending reminder with id ${id}.`
+      const deleted = await deleteReminder(id)
+      return deleted > 0 ? `Deleted reminder ${id}.` : `No pending reminder with id ${id}.`
     }
   })
 }
