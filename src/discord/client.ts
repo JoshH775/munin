@@ -1,4 +1,4 @@
-import { ChannelType, Client, Events, GatewayIntentBits, Partials } from 'discord.js'
+import { ChannelType, Client, EmbedBuilder, Events, GatewayIntentBits, Partials } from 'discord.js'
 import {
   deleteChannelMessages,
   deleteMessages,
@@ -12,7 +12,7 @@ import {
   deleteSettings,
   resolveSettings
 } from '../repositories/channelSettings'
-import { fetchAllMessages, getAllThreads, sweepEphemeral } from './utils'
+import { fetchAllMessages, getAllThreads, sweepEphemeral, dispatchReminders } from './utils'
 import { log } from '../logger'
 import {
   channelTreeTool,
@@ -21,8 +21,12 @@ import {
   setChannelCategoryTool,
   tavilyExtractTool,
   tavilySearchTool,
+  createReminderTool,
+  deleteReminderTool,
+  listRemindersTool,
   updateMemoryTool
 } from '../ai/tools'
+import { findUrls } from '../urls'
 import {
   handleClearInteraction,
   handleConfigInteraction,
@@ -35,6 +39,7 @@ import {
 import { Cron } from 'croner'
 import { match } from 'ts-pattern'
 import { insertUsage } from '../repositories/usage'
+import { markReminderReceived } from '../repositories/reminders'
 
 const token = process.env.DISCORD_BOT_TOKEN
 if (!token) {
@@ -106,14 +111,22 @@ client.on(Events.MessageCreate, async (message) => {
     }
 
     const transcript = toChatTranscript(history, client.user!.id)
+    const trustedUrls = new Set<string>()
+    for (const m of history) {
+      if (m.user_id === client.user!.id) continue
+      for (const url of findUrls(m.content)) trustedUrls.add(url)
+    }
     const tools = [
       // ephemeral channels are throwaway: no memory tool, so nothing here is remembered
       ...(settings.ephemeral
         ? []
         : [updateMemoryTool(channelId, parentChannelId)]),
-      tavilySearchTool(),
-      tavilyExtractTool(),
+      tavilySearchTool(trustedUrls),
+      tavilyExtractTool(trustedUrls),
       channelTreeTool(client),
+      createReminderTool(client, message.author.id),
+      deleteReminderTool(),
+      listRemindersTool(),
       deleteCategoryTool(client),
       setChannelCategoryTool(client),
       ...(message.guild ? [createCategoryTool(client, message.guild)] : [])
@@ -253,6 +266,20 @@ client.on(Events.ChannelDelete, async (channel) => {
 })
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isButton()) {
+    const [action, id] = interaction.customId.split(':')
+    if (action !== 'reminder_ack' || !id) return
+    try {
+      await markReminderReceived(id)
+      const embed = EmbedBuilder.from(interaction.message.embeds[0])
+        .setColor(0x3bb273)
+        .setFooter({ text: `Acknowledged by ${interaction.user.username}` })
+      await interaction.update({ embeds: [embed], components: [] })
+    } catch (err) {
+      log.error({ err, customId: interaction.customId }, 'Reminder ack failed')
+    }
+    return
+  }
   if (!interaction.isChatInputCommand()) return
   try {
     await match(interaction.commandName)
@@ -278,6 +305,11 @@ client.once(Events.ClientReady, async (c) => {
       '* * * * *',
       { catch: (err) => log.error({ err }, 'Ephemeral sweep failed') },
       () => sweepEphemeral(client)
+    )
+    new Cron(
+      '* * * * *',
+      { catch: (err) => log.error({ err }, 'Reminder dispatch failed') },
+      () => dispatchReminders(client)
     )
   } catch (err) {
     log.fatal({ err }, 'Startup failed, exiting')
