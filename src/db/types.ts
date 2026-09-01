@@ -48,7 +48,7 @@ export interface Messages {
 }
 
 export interface Reminders {
-  channel_id: string;
+  channel_id: string | null;
   content: string;
   created_at: Generated<Timestamp>;
   date: Timestamp;
