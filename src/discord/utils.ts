@@ -1,5 +1,9 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   Collection,
+  EmbedBuilder,
   type AnyThreadChannel,
   type Channel,
   type Client,
@@ -7,7 +11,8 @@ import {
   type Message
 } from 'discord.js'
 import { listEphemeralChannelIds } from '../repositories/channelSettings'
-import { deleteMessages, getLatestMessage } from '../repositories/messages'
+import { deleteMessages, getLatestMessage, insertMessage } from '../repositories/messages'
+import { getDueReminders, markReminderSent } from '../repositories/reminders'
 import { log } from '../logger'
 
 export async function fetchAllMessages(
@@ -58,6 +63,43 @@ export async function sweepEphemeral(client: Client): Promise<void> {
       await deleteMessages([...deleted.keys()])
       log.info({ channelId, cleared: deleted.size }, 'Swept ephemeral channel')
     }
+  }
+}
+
+// Poll for due reminders and deliver each: ping the setter, post the embed + ack button.
+export async function dispatchReminders(client: Client): Promise<void> {
+  for (const reminder of await getDueReminders()) {
+    const channel = await client.channels.fetch(reminder.channel_id).catch(() => null)
+    if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+      await markReminderSent(reminder.id) // channel is gone; don't retry forever
+      log.warn(
+        { reminderId: reminder.id, channelId: reminder.channel_id },
+        'Reminder channel unavailable, marking sent'
+      )
+      continue
+    }
+    const embed = new EmbedBuilder().setTitle('⏰ Reminder').setDescription(reminder.content)
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`reminder_ack:${reminder.id}`)
+        .setLabel('Got it')
+        .setStyle(ButtonStyle.Success)
+    )
+    const sent = await channel.send({
+      content: reminder.target ? `<@${reminder.target}>` : undefined,
+      embeds: [embed],
+      components: [row]
+    })
+    await insertMessage({
+      channel_id: reminder.channel_id,
+      content: `⏰ ${reminder.content}`,
+      user_id: client.user!.id,
+      user_name: 'munin',
+      id: sent.id,
+      sent_at: sent.createdAt
+    })
+    await markReminderSent(reminder.id)
+    log.info({ reminderId: reminder.id, channelId: reminder.channel_id }, 'Reminder delivered')
   }
 }
 
