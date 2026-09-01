@@ -346,7 +346,7 @@ export function createReminderTool(client: Client, setById: string) {
       'Schedule a one-off reminder to post at a future time. Give the time as a UTC ISO 8601 ' +
       'datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is in your context, ' +
       'so work forward from that. It fires within about a minute of the given time. Pass channelId ' +
-      'to post it in a specific channel (use channel_tree for ids); omit it to use the default ' +
+      'to post it in a specific channel or thread (use channel_tree for ids); omit it to use the default ' +
       "reminder channel. Returns the reminder's id, which delete_reminder needs to cancel it.",
     inputSchema: z.object({
       date: z.iso.datetime().describe('When to fire, as a UTC ISO 8601 datetime ending in Z.'),
@@ -358,11 +358,9 @@ export function createReminderTool(client: Client, setById: string) {
     }),
     run: async ({ content, date, channelId }) => {
       if (channelId) {
-        const isGuildText = client.channels.cache
-          .values()
-          .some((c) => c.id === channelId && c.type === ChannelType.GuildText)
-        if (!isGuildText) {
-          throw new Error('No text channel with that id. Call channel_tree for the list of ids.')
+        const channel = await client.channels.fetch(channelId).catch(() => null)
+        if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+          throw new Error('No text channel or thread with that id. Call channel_tree for the list of ids.')
         }
       } else if (!(await getAppSettings()).reminder_channel_id) {
         throw new Error(
