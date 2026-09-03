@@ -14,7 +14,36 @@ import { listEphemeralChannelIds } from '../repositories/channelSettings'
 import { deleteMessages, getLatestMessage, insertMessage } from '../repositories/messages'
 import { getDueReminders, markReminderSent } from '../repositories/reminders'
 import { getAppSettings } from '../repositories/appSettings'
+import { toolLabels } from '../ai/toolLabels'
 import { log } from '../logger'
+
+// Post the pending tool calls as one subtext line ("-# Read 3 pages · Set 1 reminder"), tallying
+// repeats. Empties `names`; anything without a label (not a real tool) is dropped.
+export async function postPendingTools(channel: Channel, names: string[]): Promise<void> {
+  const counts = new Map<string, number>()
+  for (const name of names.splice(0)) {
+    if (Object.hasOwn(toolLabels, name)) counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  if (counts.size === 0 || !channel.isSendable()) return
+  const body =
+    '-# ' +
+    counts
+      .entries()
+      .map(([name, n]) => toolLabels[name](n))
+      .toArray()
+      .join(' · ')
+  const sent = await channel.send(body).catch(() => null)
+  if (!sent) return
+  await insertMessage({
+    channel_id: channel.id,
+    content: body,
+    user_id: channel.client.user!.id,
+    user_name: 'munin',
+    id: sent.id,
+    sent_at: sent.createdAt,
+    kind: 'tool'
+  })
+}
 
 export async function fetchAllMessages(
   channel: Channel,

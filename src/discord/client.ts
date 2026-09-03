@@ -1,4 +1,4 @@
-import { ChannelType, Client, EmbedBuilder, Events, GatewayIntentBits, Partials } from 'discord.js'
+import { ChannelType, Client, EmbedBuilder, Events, GatewayIntentBits, Partials, type Message } from 'discord.js'
 import {
   deleteChannelMessages,
   deleteMessages,
@@ -12,7 +12,7 @@ import {
   deleteSettings,
   resolveSettings
 } from '../repositories/channelSettings'
-import { fetchAllMessages, getAllThreads, sweepEphemeral, dispatchReminders } from './utils'
+import { fetchAllMessages, getAllThreads, sweepEphemeral, dispatchReminders, postPendingTools } from './utils'
 import { log } from '../logger'
 import {
   channelTreeTool,
@@ -131,7 +131,6 @@ client.on(Events.MessageCreate, async (message) => {
       setChannelCategoryTool(client),
       ...(message.guild ? [createCategoryTool(client, message.guild), channelTreeTool(client, message.guild)] : [])
     ]
-    const toolNames = new Set(tools.map((t) => t.definition.name))
     const systemSuffix = [
       `The current date and time is ${message.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
       `You are in ${channelName}.`,
@@ -139,6 +138,8 @@ client.on(Events.MessageCreate, async (message) => {
     ]
       .filter(Boolean)
       .join('\n\n')
+    // Tool calls buffer here and post as one line before munin next speaks and at turn end.
+    const pendingTools: string[] = []
     const turnStart = Date.now()
     const { usage, truncated, rounds } = await turn({
       messages: transcript,
@@ -150,6 +151,7 @@ client.on(Events.MessageCreate, async (message) => {
         message.channel.sendTyping().catch(() => {})
       },
       onText: async (text) => {
+        await postPendingTools(message.channel, pendingTools)
         const tidy = text
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
           .trim()
@@ -170,21 +172,8 @@ client.on(Events.MessageCreate, async (message) => {
           })
         }
       },
-      onToolUse: async (tool) => {
-        if (!toolNames.has(tool.name)) return
-        const full = `Tool used: ${tool.name}(${JSON.stringify(tool.input)})`
-        const line = full.length > 45 ? `${full.slice(0, 44)}…` : full
-        const sent = await message.channel.send(`-# ${line}`).catch(() => null)
-        if (sent) {
-          await insertMessage({
-            channel_id: channelId,
-            content: full,
-            user_id: client.user!.id,
-            user_name: 'munin',
-            id: sent.id,
-            sent_at: sent.createdAt
-          })
-        }
+      onToolUse: (tool) => {
+        pendingTools.push(tool.name)
       },
       onThinking: async () => {
         const sent = await message.channel
@@ -197,12 +186,14 @@ client.on(Events.MessageCreate, async (message) => {
             user_id: client.user!.id,
             id: sent.id,
             user_name: 'munin',
-            sent_at: sent.createdAt
+            sent_at: sent.createdAt,
+            kind: 'thinking'
           })
         }
       },
       tools
     })
+    await postPendingTools(message.channel, pendingTools)
 
     await insertUsage({
       in_reply_to: message.id,
@@ -318,6 +309,14 @@ client.once(Events.ClientReady, async (c) => {
   }
 })
 
+// Discord has no kind field, so recover munin's own '-# …' lines by shape when re-pulling history.
+function backfillKind(message: Message): 'chat' | 'tool' | 'thinking' {
+  if (message.author.id !== client.user?.id) return 'chat'
+  if (message.content === '-# *Thinking...*') return 'thinking'
+  if (message.content.startsWith('-# ') || message.content.startsWith('Tool used:')) return 'tool'
+  return 'chat'
+}
+
 async function backfill(): Promise<void> {
   log.info('Backfilling messages')
   const start = Date.now()
@@ -341,7 +340,8 @@ async function backfill(): Promise<void> {
             user_name: message.author.username,
             user_id: message.author.id,
             id: message.id,
-            sent_at: message.createdAt
+            sent_at: message.createdAt,
+            kind: backfillKind(message)
           })
         )
       }
@@ -361,7 +361,8 @@ async function backfill(): Promise<void> {
             user_name: message.author.username,
             user_id: message.author.id,
             id: message.id,
-            sent_at: message.createdAt
+            sent_at: message.createdAt,
+            kind: backfillKind(message)
           })
         )
       }
