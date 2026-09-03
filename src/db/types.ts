@@ -42,6 +42,7 @@ export interface Messages {
   content: string;
   created_at: Generated<Timestamp>;
   id: string;
+  kind: Generated<string>;
   sent_at: Timestamp;
   user_id: string;
   user_name: string;
