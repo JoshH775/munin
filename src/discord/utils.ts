@@ -17,6 +17,20 @@ import { getAppSettings } from '../repositories/appSettings'
 import { toolLabels } from '../ai/toolLabels'
 import { log } from '../logger'
 
+// Chunk text to fit Discord's 2000-char message limit, breaking on newlines where possible.
+export function splitForDiscord(text: string): string[] {
+  const parts: string[] = []
+  let rest = text
+  while (rest.length > 2000) {
+    let cut = rest.lastIndexOf('\n', 2000)
+    if (cut <= 0) cut = 2000
+    parts.push(rest.slice(0, cut))
+    rest = rest.slice(cut).replace(/^\n/, '')
+  }
+  if (rest) parts.push(rest)
+  return parts
+}
+
 // Post the pending tool calls as one subtext line ("-# Read 3 pages · Set 1 reminder"), tallying
 // repeats. Empties `names`; anything without a label (not a real tool) is dropped.
 export async function postPendingTools(channel: Channel, names: string[]): Promise<void> {
