@@ -1,46 +1,24 @@
-import { ChannelType, Client, EmbedBuilder, Events, GatewayIntentBits, Partials, type Message } from 'discord.js'
+import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
 import {
   deleteChannelMessages,
   deleteMessages,
-  getConversation,
   getLatestMessage,
   insertMessage,
-  toChatTranscript
 } from '../repositories/messages'
-import { turn } from '../ai'
+import { deleteSettings } from '../repositories/channelSettings'
 import {
-  deleteSettings,
-  resolveSettings
-} from '../repositories/channelSettings'
-import { fetchAllMessages, getAllThreads, sweepEphemeral, dispatchReminders, postPendingTools } from './utils'
+  fetchAllMessages,
+  getAllThreads,
+  sweepEphemeral,
+  dispatchReminders,
+} from './utils'
 import { log } from '../logger'
 import {
-  channelTreeTool,
-  createCategoryTool,
-  deleteCategoryTool,
-  setChannelCategoryTool,
-  tavilyExtractTool,
-  tavilySearchTool,
-  createReminderTool,
-  deleteReminderTool,
-  listRemindersTool,
-  updateMemoryTool
-} from '../ai/tools'
-import { findUrls } from '../urls'
-import {
-  handleClearInteraction,
-  handleConfigInteraction,
-  handleEphemeralInteraction,
-  handleMemoryInteraction,
-  handleMuteInteraction,
-  handleReminderChannelInteraction,
-  handleSettingsInteraction,
-  registerCommands
+  registerCommands,
 } from './commands'
 import { Cron } from 'croner'
-import { match } from 'ts-pattern'
-import { insertUsage } from '../repositories/usage'
-import { markReminderReceived } from '../repositories/reminders'
+import { interactionHandler } from './interactionHandler'
+import { messageHandler } from './messageHandler'
 
 const token = process.env.DISCORD_BOT_TOKEN
 if (!token) {
@@ -51,187 +29,18 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
   ],
   // partials so delete events fire for messages not in the cache (older ones)
-  partials: [Partials.Message, Partials.Channel]
+  partials: [Partials.Message, Partials.Channel],
 })
 
 client.login(token)
 
 let ready = false
 
-// Discord caps messages at 2000 chars; split long replies, preferring a line break.
-function splitForDiscord(text: string): string[] {
-  const parts: string[] = []
-  let rest = text
-  while (rest.length > 2000) {
-    let cut = rest.lastIndexOf('\n', 2000)
-    if (cut <= 0) cut = 2000
-    parts.push(rest.slice(0, cut))
-    rest = rest.slice(cut).replace(/^\n/, '')
-  }
-  if (rest) parts.push(rest)
-  return parts
-}
-
 client.on(Events.MessageCreate, async (message) => {
-  if (!ready) return
-  if (message.author.id === client.user?.id) return
-  if (message.system) return // ignore discord system notices (thread created, pins, joins, …)
-  const channelId = message.channelId
-  const parentChannelId = message.channel.isThread()
-    ? message.channel.parentId
-    : null
-  const channelName = message.channel.isThread()
-    ? `#${message.channel.parent?.name ?? 'unknown'} (thread: ${message.channel.name})`
-    : `#${'name' in message.channel ? message.channel.name : channelId}`
-  try {
-    log.info(
-      { channelId, parentChannelId, user: message.author.username },
-      'Message received'
-    )
-
-    await insertMessage({
-      channel_id: channelId,
-      content: message.content,
-      user_id: message.author.id,
-      user_name: message.author.username,
-      id: message.id,
-      sent_at: message.createdAt
-    })
-
-    const [history, settings] = await Promise.all([
-      getConversation({ channelId }),
-      resolveSettings(channelId, parentChannelId)
-    ])
-
-    if (!settings.enabled) {
-      log.info({ channelId }, 'Channel disabled, ignoring message')
-      return
-    }
-
-    const transcript = toChatTranscript(history, client.user!.id)
-    const trustedUrls = new Set<string>()
-    for (const m of history) {
-      if (m.user_id === client.user!.id) continue
-      for (const url of findUrls(m.content)) trustedUrls.add(url)
-    }
-    const tools = [
-      // ephemeral channels are throwaway: no memory tool, so nothing here is remembered
-      ...(settings.ephemeral
-        ? []
-        : [updateMemoryTool(channelId, parentChannelId)]),
-      tavilySearchTool(trustedUrls),
-      tavilyExtractTool(trustedUrls),
-      createReminderTool(client, message.author.id),
-      deleteReminderTool(),
-      listRemindersTool(),
-      deleteCategoryTool(client),
-      setChannelCategoryTool(client),
-      ...(message.guild ? [createCategoryTool(client, message.guild), channelTreeTool(client, message.guild)] : [])
-    ]
-    const systemSuffix = [
-      `The current date and time is ${message.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
-      `You are in ${channelName}.`,
-      settings.memory.trim() && `<memory>\n${settings.memory}\n</memory>`
-    ]
-      .filter(Boolean)
-      .join('\n\n')
-    // Tool calls buffer here and post as one line before munin next speaks and at turn end.
-    const pendingTools: string[] = []
-    const turnStart = Date.now()
-    const { usage, truncated, rounds } = await turn({
-      messages: transcript,
-      model: settings.model,
-      effort: settings.effort,
-      system: settings.persona,
-      systemSuffix,
-      onRoundStart: () => {
-        message.channel.sendTyping().catch(() => {})
-      },
-      onText: async (text) => {
-        await postPendingTools(message.channel, pendingTools)
-        const tidy = text
-          .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
-          .trim()
-        if (!tidy) return
-        const parts = splitForDiscord(tidy)
-        if (parts.length > 1) {
-          log.info({ channelId, parts: parts.length }, 'Reply split across messages')
-        }
-        for (const part of parts) {
-          const sent = await message.channel.send(part)
-          await insertMessage({
-            channel_id: channelId,
-            content: part,
-            user_id: client.user!.id,
-            user_name: 'munin',
-            id: sent.id,
-            sent_at: sent.createdAt
-          })
-        }
-      },
-      onToolUse: (tool) => {
-        pendingTools.push(tool.name)
-      },
-      onThinking: async () => {
-        const sent = await message.channel
-          .send(`-# *Thinking...*`)
-          .catch(() => null)
-        if (sent) {
-          await insertMessage({
-            channel_id: channelId,
-            content: sent.content,
-            user_id: client.user!.id,
-            id: sent.id,
-            user_name: 'munin',
-            sent_at: sent.createdAt,
-            kind: 'thinking'
-          })
-        }
-      },
-      tools
-    })
-    await postPendingTools(message.channel, pendingTools)
-
-    await insertUsage({
-      in_reply_to: message.id,
-      effort: settings.effort,
-      model: settings.model,
-      ...usage
-    })
-
-    if (truncated) {
-      await message.channel.send('**Turn limit reached, output truncated.**')
-    }
-
-    const channel = client.channels.cache.get(channelId)
-    if (channel?.type === ChannelType.GuildText && !settings.ephemeral) {
-      if (channel.position !== 0) channel.setPosition(0).catch((err) => log.error({ err, channelId }, 'Reorder failed'))
-      if (channel.parent && channel.parent.position !== 0) channel.parent.setPosition(0).catch((err) => log.error({ err, channelId }, 'Reorder failed'))
-    }
-    
-
-    log.info(
-      {
-        channelId,
-        model: settings.model,
-        effort: settings.effort,
-        rounds,
-        ms: Date.now() - turnStart,
-        tokens: {
-          in: usage.input_tokens,
-          out: usage.output_tokens,
-          cacheRead: usage.cache_read_input_tokens
-        },
-        ...(truncated ? { truncated: true } : {})
-      },
-      'Replied'
-    )
-  } catch (err) {
-    log.error({ err, channelId, parentChannelId }, 'Failed to handle message')
-  }
+  if (ready) messageHandler(client, message)
 })
 
 client.on(Events.MessageDelete, (message) => {
@@ -256,36 +65,7 @@ client.on(Events.ChannelDelete, async (channel) => {
   await deleteSettings([channel.id])
 })
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isButton()) {
-    const [action, id] = interaction.customId.split(':')
-    if (action !== 'reminder_ack' || !id) return
-    try {
-      await markReminderReceived(id)
-      const embed = EmbedBuilder.from(interaction.message.embeds[0])
-        .setColor(0x3bb273)
-        .setFooter({ text: `Acknowledged by ${interaction.user.username}` })
-      await interaction.update({ embeds: [embed], components: [] })
-    } catch (err) {
-      log.error({ err, customId: interaction.customId }, 'Reminder ack failed')
-    }
-    return
-  }
-  if (!interaction.isChatInputCommand()) return
-  try {
-    await match(interaction.commandName)
-      .with('config', () => handleConfigInteraction(interaction))
-      .with('settings', () => handleSettingsInteraction(interaction))
-      .with('memory', () => handleMemoryInteraction(interaction))
-      .with('mute', () => handleMuteInteraction(interaction))
-      .with('ephemeral', () => handleEphemeralInteraction(interaction))
-      .with('clear', () => handleClearInteraction(interaction))
-      .with('reminder-channel', () => handleReminderChannelInteraction(interaction))
-      .otherwise(async () => {})
-  } catch (err) {
-    log.error({ err, command: interaction.commandName }, 'Interaction failed')
-  }
-})
+client.on(Events.InteractionCreate, async (interaction) => interactionHandler(interaction))
 
 client.once(Events.ClientReady, async (c) => {
   log.info({ tag: c.user.tag }, 'Logged in')
@@ -293,29 +73,17 @@ client.once(Events.ClientReady, async (c) => {
     await registerCommands(client)
     await backfill()
     ready = true
-    new Cron(
-      '* * * * *',
-      { catch: (err) => log.error({ err }, 'Ephemeral sweep failed') },
-      () => sweepEphemeral(client)
+    new Cron('* * * * *', { catch: (err) => log.error({ err }, 'Ephemeral sweep failed') }, () =>
+      sweepEphemeral(client),
     )
-    new Cron(
-      '* * * * *',
-      { catch: (err) => log.error({ err }, 'Reminder dispatch failed') },
-      () => dispatchReminders(client)
+    new Cron('* * * * *', { catch: (err) => log.error({ err }, 'Reminder dispatch failed') }, () =>
+      dispatchReminders(client),
     )
   } catch (err) {
     log.fatal({ err }, 'Startup failed, exiting')
     process.exit(1)
   }
 })
-
-// Discord has no kind field, so recover munin's own '-# …' lines by shape when re-pulling history.
-function backfillKind(message: Message): 'chat' | 'tool' | 'thinking' {
-  if (message.author.id !== client.user?.id) return 'chat'
-  if (message.content === '-# *Thinking...*') return 'thinking'
-  if (message.content.startsWith('-# ') || message.content.startsWith('Tool used:')) return 'tool'
-  return 'chat'
-}
 
 async function backfill(): Promise<void> {
   log.info('Backfilling messages')
@@ -341,8 +109,7 @@ async function backfill(): Promise<void> {
             user_id: message.author.id,
             id: message.id,
             sent_at: message.createdAt,
-            kind: backfillKind(message)
-          })
+          }),
         )
       }
       channelCount++
@@ -362,8 +129,7 @@ async function backfill(): Promise<void> {
             user_id: message.author.id,
             id: message.id,
             sent_at: message.createdAt,
-            kind: backfillKind(message)
-          })
+          }),
         )
       }
       threadCount++
@@ -379,8 +145,8 @@ async function backfill(): Promise<void> {
       channels: channelCount,
       threads: threadCount,
       guilds: guildCount,
-      ms: Date.now() - start
+      ms: Date.now() - start,
     },
-    'Backfill complete'
+    'Backfill complete',
   )
 }
