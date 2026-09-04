@@ -10,7 +10,8 @@ if (command !== 'push' && command !== 'reset') {
 }
 
 const client = new Client({
-  connectionString: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5434/postgres',
+  connectionString:
+    process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5434/postgres',
 })
 await client.connect()
 
@@ -50,7 +51,6 @@ for (const name of files) {
 if (!failed && command === 'reset') {
   const seed = await readFile('src/db/seed.sql', 'utf8')
   await client.query(seed)
-
 }
 
 await client.end()

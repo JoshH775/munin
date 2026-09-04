@@ -7,7 +7,14 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { makeTool } from './makeTool'
 import { updateMemory } from '../repositories/channelSettings'
-import { CategoryChannel, ChannelType, Guild, TextChannel, type AnyThreadChannel, type Client } from 'discord.js'
+import {
+  CategoryChannel,
+  ChannelType,
+  Guild,
+  TextChannel,
+  type AnyThreadChannel,
+  type Client,
+} from 'discord.js'
 import { log } from '../logger'
 import { insertNewReminder, deleteReminder, getPendingReminders } from '../repositories/reminders'
 import { getAppSettings } from '../repositories/appSettings'
@@ -26,14 +33,14 @@ export function tavilySearchTool(trustedUrls: Set<string>) {
       'a question turns on something you do not know or that may have changed. Make each query count ' +
       'rather than firing off several.',
     inputSchema: z.object({
-      query: z.string().describe('The search query.')
+      query: z.string().describe('The search query.'),
     }),
     run: async ({ query }) => {
       if (!tavilyClient) return 'Web search is unavailable: TAVILY_API_KEY is not set.'
       try {
         const { results } = await tavilyClient.search(query, {
           searchDepth: 'basic',
-          maxResults: 6
+          maxResults: 6,
         })
         if (results.length === 0) return `No results for "${query}".`
 
@@ -49,7 +56,7 @@ export function tavilySearchTool(trustedUrls: Set<string>) {
         return `Web search failed: ${String(err)}`
       }
     },
-    readsUntrusted: true
+    readsUntrusted: true,
   })
 }
 
@@ -65,7 +72,7 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
       'first when you need a page you do not yet have a URL for.',
     inputSchema: z.object({
       urls: z.array(z.url()),
-      query: z.string().optional()
+      query: z.string().optional(),
     }),
     run: async ({ urls, query }) => {
       if (!tavilyClient) return 'Web search is unavailable: TAVILY_API_KEY is not set.'
@@ -84,7 +91,7 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
       try {
         const { results, failedResults } = await tavilyClient.extract(allowed, {
           format: 'markdown',
-          ...(query ? { query, chunksPerSource: 5 } : {})
+          ...(query ? { query, chunksPerSource: 5 } : {}),
         })
 
         const rows = results.map((r) => {
@@ -102,20 +109,16 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
           rows.push(`Refused (not from a search result or the conversation): ${blocked.join(', ')}`)
         }
         return rows.length ? rows.join('\n\n') : 'No content returned.'
-
       } catch (err) {
         console.error('Tavily extract failed', err)
         return `Web extraction failed: ${String(err)}`
       }
     },
-    readsUntrusted: true
+    readsUntrusted: true,
   })
 }
 
-export function updateMemoryTool(
-  channelId: string,
-  parentChannelId: string | null
-) {
+export function updateMemoryTool(channelId: string, parentChannelId: string | null) {
   const isThread = parentChannelId !== null
   return makeTool({
     name: 'update_memory',
@@ -132,7 +135,7 @@ export function updateMemoryTool(
         .describe(
           isThread
             ? "This thread's updated memory document."
-            : "This channel's updated memory document."
+            : "This channel's updated memory document.",
         ),
       parentMemory: z
         .string()
@@ -140,8 +143,8 @@ export function updateMemoryTool(
         .describe(
           isThread
             ? "The parent channel's updated memory document, shared across the whole channel."
-            : 'The global memory document, shared across every channel.'
-        )
+            : 'The global memory document, shared across every channel.',
+        ),
     }),
     run: async ({ memory, parentMemory }) => {
       const updated: string[] = []
@@ -152,13 +155,13 @@ export function updateMemoryTool(
       if (parentMemory !== undefined) {
         await updateMemory({
           channelId: parentChannelId ?? 'global',
-          memory: parentMemory
+          memory: parentMemory,
         })
         updated.push(isThread ? 'channel memory' : 'global memory')
       }
       if (updated.length === 0) return 'No memory provided; nothing updated.'
       return `Updated ${updated.join(' and ')}.`
-    }
+    },
   })
 }
 
@@ -182,20 +185,15 @@ export function startWorkTool(channelName: string) {
     inputSchema: z.object({
       task: z
         .string()
-        .describe(
-          'A clear, self-contained description of the work to plan and carry out.'
-        )
+        .describe('A clear, self-contained description of the work to plan and carry out.'),
     }),
     run: async ({ task }) => {
-      const dir = join(
-        process.env.WORK_DIR || join(homedir(), 'projects'),
-        slug
-      )
+      const dir = join(process.env.WORK_DIR || join(homedir(), 'projects'), slug)
       const session = `munin-${slug}`
       mkdirSync(dir, { recursive: true })
       try {
         execFileSync('tmux', ['has-session', '-t', session], {
-          stdio: 'ignore'
+          stdio: 'ignore',
         })
         return `A work session (${session}) is already running for this channel; leaving it alone. Attach with \`tmux attach -t ${session}\`.`
       } catch {
@@ -212,12 +210,12 @@ export function startWorkTool(channelName: string) {
         '-u',
         'ANTHROPIC_API_KEY',
         'claude',
-        `/plan ${task}`
+        `/plan ${task}`,
       ])
       return `Launched an interactive Claude Code session in ${dir} (tmux session ${session}) to plan: ${task}. Attach with \`tmux attach -t ${session}\` to watch or continue.`
     },
     // Launches an arbitrary Claude Code session: the strongest arbitrary-outreach tool there is.
-    arbitraryOutreach: true
+    arbitraryOutreach: true,
   })
 }
 
@@ -228,22 +226,31 @@ export function channelTreeTool(client: Client, guild: Guild) {
       "Show the server's channels grouped by category, each channel and category with its id, and any threads nested under their channel. Reach for it to see what exists and grab the ids you need before linking a channel or thread with `<#id>`, creating or deleting a category, or moving a channel.",
     inputSchema: z.object({}),
     run: async () => {
-
       const threads = await getAllThreads(guild)
-      const textChannels = client.channels.cache.values().filter((c): c is TextChannel => c.type === ChannelType.GuildText).toArray().sort((a, b) => a.position - b.position)
+      const textChannels = client.channels.cache
+        .values()
+        .filter((c): c is TextChannel => c.type === ChannelType.GuildText)
+        .toArray()
+        .sort((a, b) => a.position - b.position)
 
       const threadsFor = (channel: TextChannel) => {
         return threads.filter((t) => t.parentId === channel.id)
       }
 
       const renderChildren = (channels: TextChannel[]) => {
-        return channels.map((c) => {
-          const threadLines = threadsFor(c).map((t) => `    - ${t.name} (${t.id})`)
-          return [`- #${c.name} (${c.id})`, ...threadLines].join('\n')
-        }).join('\n')
+        return channels
+          .map((c) => {
+            const threadLines = threadsFor(c).map((t) => `    - ${t.name} (${t.id})`)
+            return [`- #${c.name} (${c.id})`, ...threadLines].join('\n')
+          })
+          .join('\n')
       }
 
-      const categories = client.channels.cache.values().filter((c): c is CategoryChannel => c.type === ChannelType.GuildCategory).toArray().sort((a, b) => a.position - b.position)
+      const categories = client.channels.cache
+        .values()
+        .filter((c): c is CategoryChannel => c.type === ChannelType.GuildCategory)
+        .toArray()
+        .sort((a, b) => a.position - b.position)
       const channelsByCategories = new Map<CategoryChannel | null, TextChannel[]>()
       categories.forEach((c) => channelsByCategories.set(c, []))
       for (const channel of textChannels) {
@@ -251,8 +258,15 @@ export function channelTreeTool(client: Client, guild: Guild) {
         channelsByCategories.set(channel.parent, [...existing, channel])
       }
 
-      return channelsByCategories.entries().map(([category, channels]) => `${category ? `${category.name} (${category.id})` : 'No Category'}\n${renderChildren(channels)}`).toArray().join('\n\n')
-    }
+      return channelsByCategories
+        .entries()
+        .map(
+          ([category, channels]) =>
+            `${category ? `${category.name} (${category.id})` : 'No Category'}\n${renderChildren(channels)}`,
+        )
+        .toArray()
+        .join('\n\n')
+    },
   })
 }
 
@@ -262,22 +276,25 @@ export function createCategoryTool(client: Client, guild: Guild) {
     description:
       'Create a new empty category by name and return its id, so you can then move channels into it. Fails if a category with that name already exists.',
     inputSchema: z.object({
-      name: z.string().describe('The name for the new category.')
+      name: z.string().describe('The name for the new category.'),
     }),
     run: async (args) => {
-      const existingNames = client.channels.cache.values().filter((c): c is CategoryChannel => c.type === ChannelType.GuildCategory).toArray().map((c) => c.name.toLowerCase())
+      const existingNames = client.channels.cache
+        .values()
+        .filter((c): c is CategoryChannel => c.type === ChannelType.GuildCategory)
+        .toArray()
+        .map((c) => c.name.toLowerCase())
       if (existingNames.includes(args.name.toLowerCase())) {
         throw new Error(`A category named "${args.name}" already exists.`)
       }
 
       const category = await guild.channels.create({
         name: args.name,
-        type: ChannelType.GuildCategory
+        type: ChannelType.GuildCategory,
       })
 
       return `Created category "${args.name}" (${category.id}).`
-
-    }
+    },
   })
 }
 
@@ -287,7 +304,7 @@ export function deleteCategoryTool(client: Client) {
     description:
       'Delete a category by id. Its channels are not deleted — they just become uncategorised. Reports how many were orphaned.',
     inputSchema: z.object({
-      categoryId: z.string().describe('The id of the category to delete.')
+      categoryId: z.string().describe('The id of the category to delete.'),
     }),
     run: async ({ categoryId }) => {
       const category = client.channels.cache.get(categoryId)
@@ -301,7 +318,7 @@ export function deleteCategoryTool(client: Client) {
         `Deleted category "${name}".` +
         (orphaned ? ` ${orphaned} channel${orphaned === 1 ? '' : 's'} now uncategorised.` : '')
       )
-    }
+    },
   })
 }
 
@@ -315,7 +332,9 @@ export function setChannelCategoryTool(client: Client) {
       categoryId: z
         .string()
         .nullable()
-        .describe('The id of the category to move it into, or null to remove it from any category.')
+        .describe(
+          'The id of the category to move it into, or null to remove it from any category.',
+        ),
     }),
     run: async ({ channelId, categoryId }) => {
       const channel = client.channels.cache.get(channelId)
@@ -334,10 +353,9 @@ export function setChannelCategoryTool(client: Client) {
       return categoryName
         ? `Moved #${channel.name} into "${categoryName}".`
         : `Removed #${channel.name} from its category.`
-    }
+    },
   })
 }
- 
 
 export function createReminderTool(client: Client, setById: string) {
   return makeTool({
@@ -354,22 +372,29 @@ export function createReminderTool(client: Client, setById: string) {
       channelId: z
         .string()
         .optional()
-        .describe('Channel to post in. Omit to use the default reminder channel.')
+        .describe('Channel to post in. Omit to use the default reminder channel.'),
     }),
     run: async ({ content, date, channelId }) => {
       if (channelId) {
         const channel = await client.channels.fetch(channelId).catch(() => null)
         if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-          throw new Error('No text channel or thread with that id. Call channel_tree for the list of ids.')
+          throw new Error(
+            'No text channel or thread with that id. Call channel_tree for the list of ids.',
+          )
         }
       } else if (!(await getAppSettings()).reminder_channel_id) {
         throw new Error(
-          'No channelId given and no default reminder channel is set. Pass a channelId or ask the user to run /reminder-channel.'
+          'No channelId given and no default reminder channel is set. Pass a channelId or ask the user to run /reminder-channel.',
         )
       }
-      const { id } = await insertNewReminder({ content, date, channel_id: channelId ?? null, target: setById })
+      const { id } = await insertNewReminder({
+        content,
+        date,
+        channel_id: channelId ?? null,
+        target: setById,
+      })
       return `Reminder set for ${date}${channelId ? ` in <#${channelId}>` : ''} (id ${id}).`
-    }
+    },
   })
 }
 
@@ -380,12 +405,12 @@ export function deleteReminderTool() {
       'Delete a pending reminder by its id so it never fires. The id is the one create_reminder ' +
       'returned. Does nothing if the reminder has already fired or the id is unknown.',
     inputSchema: z.object({
-      id: z.uuid().describe('The id of the reminder to delete.')
+      id: z.uuid().describe('The id of the reminder to delete.'),
     }),
     run: async ({ id }) => {
       const deleted = await deleteReminder(id)
       return deleted > 0 ? `Deleted reminder ${id}.` : `No pending reminder with id ${id}.`
-    }
+    },
   })
 }
 
@@ -400,8 +425,11 @@ export function listRemindersTool() {
       const reminders = await getPendingReminders()
       if (reminders.length === 0) return 'No pending reminders.'
       return reminders
-        .map((r) => `${r.id} — ${r.date.toISOString()} — ${r.channel_id ? `<#${r.channel_id}>` : 'default channel'} — ${r.content}`)
+        .map(
+          (r) =>
+            `${r.id} — ${r.date.toISOString()} — ${r.channel_id ? `<#${r.channel_id}>` : 'default channel'} — ${r.content}`,
+        )
         .join('\n')
-    }
+    },
   })
 }

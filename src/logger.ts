@@ -8,7 +8,7 @@ export const log = pino({
       colorize: true,
       singleLine: true,
       translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
-      ignore: 'pid,hostname'
-    }
-  }
+      ignore: 'pid,hostname',
+    },
+  },
 })

@@ -8,11 +8,11 @@ services:
     environment:
       POSTGRES_PASSWORD: postgres
     ports:
-      - "127.0.0.1:5434:5432" # loopback only — never remove the 127.0.0.1 (docker bypasses ufw)
+      - '127.0.0.1:5434:5432' # loopback only — never remove the 127.0.0.1 (docker bypasses ufw)
     volumes:
       - pgdata:/var/lib/postgresql # PG18 path; 17 and earlier used /var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      test: ['CMD', 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1']
       interval: 2s
       retries: 15
 
@@ -20,7 +20,7 @@ services:
     image: ghcr.io/drizzle-team/gateway:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:54323:4983"
+      - '127.0.0.1:54323:4983'
     volumes:
       - ./.gateway:/app # bind mount: connection config survives db:reset
     depends_on:

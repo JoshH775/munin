@@ -12,5 +12,5 @@ export const toolLabels: Record<string, (n: number) => string> = {
   create_category: (n) => `Created ${plural(n, 'category', 'categories')}`,
   delete_category: (n) => `Deleted ${plural(n, 'category', 'categories')}`,
   set_channel_category: (n) => `Moved ${plural(n, 'channel')}`,
-  start_work: (n) => `Handed off ${plural(n, 'task')} to Claude Code`
+  start_work: (n) => `Handed off ${plural(n, 'task')} to Claude Code`,
 }

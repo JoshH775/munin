@@ -15,7 +15,7 @@ function clientFor(model: string) {
     if (!key) throw new Error('DeepInfra API key not set.')
     return new Anthropic({
       apiKey: key,
-      baseURL: 'https://api.deepinfra.com/anthropic'
+      baseURL: 'https://api.deepinfra.com/anthropic',
     })
   }
 }
@@ -61,7 +61,7 @@ export async function turn(params: TurnParams): Promise<{
     maxTokens = 4096,
     effort,
     system,
-    systemSuffix
+    systemSuffix,
   } = params
   const definitions = tools.map((t) => t.definition)
 
@@ -77,7 +77,7 @@ export async function turn(params: TurnParams): Promise<{
     input_tokens: 0,
     output_tokens: 0,
     cache_read_input_tokens: 0,
-    cache_creation_input_tokens: 0
+    cache_creation_input_tokens: 0,
   }
 
   // rounds are API round trips, not conversational turns
@@ -92,25 +92,21 @@ export async function turn(params: TurnParams): Promise<{
         {
           type: 'text',
           text: system instanceof Function ? system() : system,
-          cache_control: { type: 'ephemeral' }
+          cache_control: { type: 'ephemeral' },
         },
-        ...(systemSuffix ? [{ type: 'text' as const, text: systemSuffix }] : [])
+        ...(systemSuffix ? [{ type: 'text' as const, text: systemSuffix }] : []),
       ],
       tools: definitions,
-      ...(effort && { output_config: { effort } })
+      ...(effort && { output_config: { effort } }),
     })
     const response = await stream.finalMessage()
 
-    usageTotals.input_tokens =
-      usageTotals.input_tokens + response.usage.input_tokens
-    usageTotals.output_tokens =
-      usageTotals.output_tokens + response.usage.output_tokens
+    usageTotals.input_tokens = usageTotals.input_tokens + response.usage.input_tokens
+    usageTotals.output_tokens = usageTotals.output_tokens + response.usage.output_tokens
     usageTotals.cache_read_input_tokens =
-      usageTotals.cache_read_input_tokens +
-      (response.usage.cache_read_input_tokens ?? 0)
+      usageTotals.cache_read_input_tokens + (response.usage.cache_read_input_tokens ?? 0)
     usageTotals.cache_creation_input_tokens =
-      usageTotals.cache_creation_input_tokens +
-      (response.usage.cache_creation_input_tokens ?? 0)
+      usageTotals.cache_creation_input_tokens + (response.usage.cache_creation_input_tokens ?? 0)
 
     conversation.push({ role: 'assistant', content: response.content })
 
@@ -150,7 +146,7 @@ export async function turn(params: TurnParams): Promise<{
         ended: false,
         usage: usageTotals,
         rounds,
-        truncated: true
+        truncated: true,
       }
     }
 
@@ -159,31 +155,25 @@ export async function turn(params: TurnParams): Promise<{
         messages: conversation,
         ended: false,
         usage: usageTotals,
-        rounds
+        rounds,
       }
     }
 
     conversation.push({ role: 'user', content: results })
 
-    if (ended)
-      return { ended: true, messages: conversation, usage: usageTotals, rounds }
+    if (ended) return { ended: true, messages: conversation, usage: usageTotals, rounds }
   }
 
   return {
     messages: conversation,
     ended: false,
     usage: usageTotals,
-    rounds
+    rounds,
   }
 }
 
 export async function listModelIds(): Promise<string[]> {
-  const ids = [
-    'zai-org/GLM-5',
-    'zai-org/GLM-5.2',
-    'moonshotai/Kimi-K2.6',
-    'Qwen/Qwen3.5-397B-A17B'
-  ]
+  const ids = ['zai-org/GLM-5', 'zai-org/GLM-5.2', 'moonshotai/Kimi-K2.6', 'Qwen/Qwen3.5-397B-A17B']
   if (process.env.ANTHROPIC_API_KEY) {
     for await (const model of new Anthropic().models.list({ limit: 1000 })) {
       if (model.id.startsWith('claude-')) ids.push(model.id)

@@ -7,7 +7,7 @@ import { type Effort } from '../ai'
 
 const globalPersona = readFileSync(
   fileURLToPath(new URL('../../system.md', import.meta.url)),
-  'utf8'
+  'utf8',
 ).trim()
 
 export type ChannelSettings = {
@@ -24,11 +24,9 @@ export type ChannelSettings = {
 
 export async function resolveSettings(
   channelId: string,
-  parentChannelId: string | null
+  parentChannelId: string | null,
 ): Promise<ChannelSettings> {
-  const ids = [channelId, parentChannelId, 'global'].filter(
-    (id): id is string => id !== null
-  )
+  const ids = [channelId, parentChannelId, 'global'].filter((id): id is string => id !== null)
   const rows = await db
     .selectFrom('channel_settings')
     .selectAll()
@@ -42,9 +40,7 @@ export async function resolveSettings(
   if (global.model == null || global.effort == null) {
     throw new Error('Global row is missing default model/effort')
   }
-  const parent = parentChannelId
-    ? rows.find((r) => r.channel_id === parentChannelId)
-    : undefined
+  const parent = parentChannelId ? rows.find((r) => r.channel_id === parentChannelId) : undefined
   const own = rows.find((r) => r.channel_id === channelId && r.channel_id !== 'global')
 
   return {
@@ -65,7 +61,7 @@ export async function resolveSettings(
       .join('\n\n'),
     parentMemoryChannelId: parentChannelId ?? 'global',
     enabled: !(own?.disabled_at || parent?.disabled_at || global.disabled_at),
-    ephemeral: !!(own?.ephemeral || parent?.ephemeral)
+    ephemeral: !!(own?.ephemeral || parent?.ephemeral),
   }
 }
 
@@ -79,9 +75,7 @@ export async function updateMemory({
   await db
     .insertInto('channel_settings')
     .values({ channel_id: channelId, memory })
-    .onConflict((oc) =>
-      oc.column('channel_id').doUpdateSet({ memory, updated_at: sql`now()` })
-    )
+    .onConflict((oc) => oc.column('channel_id').doUpdateSet({ memory, updated_at: sql`now()` }))
     .execute()
 }
 
@@ -97,9 +91,7 @@ export async function updateConfig({
   await db
     .insertInto('channel_settings')
     .values({ channel_id: channelId, ...patch })
-    .onConflict((oc) =>
-      oc.column('channel_id').doUpdateSet({ ...patch, updated_at: sql`now()` })
-    )
+    .onConflict((oc) => oc.column('channel_id').doUpdateSet({ ...patch, updated_at: sql`now()` }))
     .execute()
 }
 
@@ -109,7 +101,6 @@ export async function deleteSettings(channelIds: string[]): Promise<void> {
   if (ids.length === 0) return
   await db.deleteFrom('channel_settings').where('channel_id', 'in', ids).execute()
 }
-
 
 // toggles the ephemeral flag for a channel. returns true if now ephemeral, false if not.
 export async function toggleEphemeral(channelId: string): Promise<boolean> {
@@ -123,7 +114,7 @@ export async function toggleEphemeral(channelId: string): Promise<boolean> {
     .insertInto('channel_settings')
     .values({ channel_id: channelId, ephemeral: next })
     .onConflict((oc) =>
-      oc.column('channel_id').doUpdateSet({ ephemeral: next, updated_at: sql`now()` })
+      oc.column('channel_id').doUpdateSet({ ephemeral: next, updated_at: sql`now()` }),
     )
     .execute()
   return next
@@ -153,8 +144,8 @@ export async function toggleChannelMute(channelId: string): Promise<boolean> {
     .onConflict((oc) =>
       oc.column('channel_id').doUpdateSet({
         disabled_at: muting ? sql`now()` : null,
-        updated_at: sql`now()`
-      })
+        updated_at: sql`now()`,
+      }),
     )
     .execute()
   return muting

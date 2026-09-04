@@ -30,6 +30,6 @@ export function makeTool<TSchema extends z.ZodType>(params: {
     run: async (args) => params.run(inputSchema.parse(args)),
     terminal,
     arbitraryOutreach,
-    readsUntrusted
+    readsUntrusted,
   }
 }

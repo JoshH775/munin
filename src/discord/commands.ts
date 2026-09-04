@@ -3,14 +3,14 @@ import {
   Client,
   EmbedBuilder,
   MessageFlags,
-  SlashCommandBuilder
+  SlashCommandBuilder,
 } from 'discord.js'
 import { efforts, listModelIds, type Effort } from '../ai'
 import {
   resolveSettings,
   toggleChannelMute,
   toggleEphemeral,
-  updateConfig
+  updateConfig,
 } from '../repositories/channelSettings'
 import { deleteMessages } from '../repositories/messages'
 import { setReminderChannel } from '../repositories/appSettings'
@@ -28,13 +28,19 @@ const config = new SlashCommandBuilder()
     o
       .setName('model')
       .setDescription('Model (Default clears the override)')
-      .addChoices({ name: 'Default', value: DEFAULT }, ...modelIds.map((id) => ({ name: id, value: id })))
+      .addChoices(
+        { name: 'Default', value: DEFAULT },
+        ...modelIds.map((id) => ({ name: id, value: id })),
+      ),
   )
   .addStringOption((o) =>
     o
       .setName('effort')
       .setDescription('Effort (Default clears the override)')
-      .addChoices({ name: 'Default', value: DEFAULT }, ...efforts.map((e) => ({ name: e, value: e })))
+      .addChoices(
+        { name: 'Default', value: DEFAULT },
+        ...efforts.map((e) => ({ name: e, value: e })),
+      ),
   )
 
 const settings = new SlashCommandBuilder()
@@ -45,11 +51,18 @@ const memory = new SlashCommandBuilder()
   .setName('memory')
   .setDescription("View this channel's memory")
 
-const mute = new SlashCommandBuilder().setName("mute").setDescription("Mute or unmute munin in this channel").addBooleanOption((b) => b.setName("everywhere").setDescription("Apply across every channel, not just this one"))
+const mute = new SlashCommandBuilder()
+  .setName('mute')
+  .setDescription('Mute or unmute munin in this channel')
+  .addBooleanOption((b) =>
+    b.setName('everywhere').setDescription('Apply across every channel, not just this one'),
+  )
 
 const ephemeral = new SlashCommandBuilder()
   .setName('ephemeral')
-  .setDescription('Toggle this channel as ephemeral (auto-clears ~5 min after the last message, never remembered)')
+  .setDescription(
+    'Toggle this channel as ephemeral (auto-clears ~5 min after the last message, never remembered)',
+  )
 
 const clear = new SlashCommandBuilder()
   .setName('clear')
@@ -60,7 +73,7 @@ const clear = new SlashCommandBuilder()
       .setDescription('How many recent messages to delete')
       .setRequired(true)
       .setMinValue(1)
-      .setMaxValue(100)
+      .setMaxValue(100),
   )
 
 const reminderChannel = new SlashCommandBuilder()
@@ -69,17 +82,15 @@ const reminderChannel = new SlashCommandBuilder()
 
 const commands = [config, settings, memory, mute, ephemeral, clear, reminderChannel]
 
-
-
 export async function handleConfigInteraction(
-  interaction: ChatInputCommandInteraction
+  interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   const model = interaction.options.getString('model')
   const effort = interaction.options.getString('effort')
   if (model === null && effort === null) {
     await interaction.reply({
       content: 'Pass a model or effort to change. Use `/settings` to view this channel.',
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     })
     return
   }
@@ -96,11 +107,14 @@ export async function handleConfigInteraction(
   }
 
   await updateConfig({ channelId: interaction.channelId, ...patch })
-  await interaction.reply({ content: `Updated ${changes.join(', ')}.`, flags: MessageFlags.Ephemeral })
+  await interaction.reply({
+    content: `Updated ${changes.join(', ')}.`,
+    flags: MessageFlags.Ephemeral,
+  })
 }
 
 export async function handleSettingsInteraction(
-  interaction: ChatInputCommandInteraction
+  interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   const parentChannelId = interaction.channel?.isThread() ? interaction.channel.parentId : null
   const s = await resolveSettings(interaction.channelId, parentChannelId)
@@ -112,20 +126,22 @@ export async function handleSettingsInteraction(
       { name: 'Model', value: `\`${s.model}\``, inline: true },
       { name: 'Effort', value: `\`${s.effort}\``, inline: true },
       { name: 'Replies', value: s.enabled ? 'On' : 'Muted', inline: true },
-      { name: 'Ephemeral', value: s.ephemeral ? 'Yes' : 'No', inline: true }
+      { name: 'Ephemeral', value: s.ephemeral ? 'Yes' : 'No', inline: true },
     )
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
 }
 
 export async function handleMemoryInteraction(
-  interaction: ChatInputCommandInteraction
+  interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   const parentChannelId = interaction.channel?.isThread() ? interaction.channel.parentId : null
   const s = await resolveSettings(interaction.channelId, parentChannelId)
   const text = s.memory.trim()
   const embed = new EmbedBuilder()
     .setTitle('Memory')
-    .setDescription(text ? (text.length > 4096 ? `${text.slice(0, 4095)}…` : text) : '_No memory yet._')
+    .setDescription(
+      text ? (text.length > 4096 ? `${text.slice(0, 4095)}…` : text) : '_No memory yet._',
+    )
     .setColor(0x1e2547)
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
 }
@@ -138,27 +154,36 @@ export async function handleMuteInteraction(interaction: ChatInputCommandInterac
   log.info({ channelId, muted }, `Munin ${muted ? 'muted' : 'unmuted'} ${scope}`)
   await interaction.reply({
     content: `Munin ${muted ? 'muted' : 'unmuted'} ${scope}`,
-    flags: MessageFlags.Ephemeral
+    flags: MessageFlags.Ephemeral,
   })
 }
 
-
-export async function handleEphemeralInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
+export async function handleEphemeralInteraction(
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
   const on = await toggleEphemeral(interaction.channelId)
-  log.info({ channelId: interaction.channelId, ephemeral: on }, `Channel ${on ? 'now' : 'no longer'} ephemeral`)
+  log.info(
+    { channelId: interaction.channelId, ephemeral: on },
+    `Channel ${on ? 'now' : 'no longer'} ephemeral`,
+  )
   await interaction.reply({
     content: on
       ? 'This channel is now ephemeral. Messages clear about 5 minutes after the last one, and nothing here enters memory.'
       : 'This channel is no longer ephemeral.',
-    flags: MessageFlags.Ephemeral
+    flags: MessageFlags.Ephemeral,
   })
 }
 
-export async function handleClearInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
+export async function handleClearInteraction(
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
   const count = interaction.options.getInteger('count', true)
   const channel = interaction.channel
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-    await interaction.reply({ content: 'I can only clear a server text channel.', flags: MessageFlags.Ephemeral })
+    await interaction.reply({
+      content: 'I can only clear a server text channel.',
+      flags: MessageFlags.Ephemeral,
+    })
     return
   }
   const deleted = await channel.bulkDelete(count, true)
@@ -168,28 +193,34 @@ export async function handleClearInteraction(interaction: ChatInputCommandIntera
     content:
       `Deleted ${deleted.size} message${deleted.size === 1 ? '' : 's'}.` +
       (deleted.size < count ? " (Messages older than 14 days can't be bulk-deleted.)" : ''),
-    flags: MessageFlags.Ephemeral
+    flags: MessageFlags.Ephemeral,
   })
 }
 
 export async function handleReminderChannelInteraction(
-  interaction: ChatInputCommandInteraction
+  interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   const channel = interaction.channel
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-    await interaction.reply({ content: 'Pick a server text channel.', flags: MessageFlags.Ephemeral })
+    await interaction.reply({
+      content: 'Pick a server text channel.',
+      flags: MessageFlags.Ephemeral,
+    })
     return
   }
   await setReminderChannel(interaction.channelId)
   log.info({ channelId: interaction.channelId }, 'Reminder channel set')
   await interaction.reply({
     content: `Reminders will default to <#${interaction.channelId}>.`,
-    flags: MessageFlags.Ephemeral
+    flags: MessageFlags.Ephemeral,
   })
 }
 
 export async function registerCommands(client: Client): Promise<void> {
   const json = commands.map((c) => c.toJSON())
   for (const guild of client.guilds.cache.values()) await guild.commands.set(json)
-  log.info({ guilds: client.guilds.cache.size, commands: commands.length }, 'Slash commands registered')
+  log.info(
+    { guilds: client.guilds.cache.size, commands: commands.length },
+    'Slash commands registered',
+  )
 }
