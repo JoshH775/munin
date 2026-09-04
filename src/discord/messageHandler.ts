@@ -86,6 +86,12 @@ export async function messageHandler(
     // Tool calls buffer here and post as one line before munin next speaks and at turn end.
     const pendingTools: string[] = []
     const turnStart = Date.now()
+
+    let typing: ReturnType<typeof setInterval> | null = null
+    const stopTyping = () => {
+      if (typing) clearInterval(typing)
+      typing = null
+    }
     const { usage, truncated, rounds } = await turn({
       messages: transcript,
       model: settings.model,
@@ -93,9 +99,12 @@ export async function messageHandler(
       system: settings.persona,
       systemSuffix,
       onRoundStart: () => {
+        stopTyping() // never stack two intervals across rounds
         message.channel.sendTyping().catch(() => {})
+        typing = setInterval(() => message.channel.sendTyping().catch(() => {}), 8000)
       },
       onText: async (text) => {
+        stopTyping()
         await postPendingTools(message.channel, tools, pendingTools)
         const tidy = text
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
@@ -121,7 +130,7 @@ export async function messageHandler(
         pendingTools.push(tool.name)
       },
       tools,
-    })
+    }).finally(stopTyping)
     await postPendingTools(message.channel, tools, pendingTools)
 
     await insertUsage({
