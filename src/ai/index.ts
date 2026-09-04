@@ -40,7 +40,6 @@ export type TurnParams = {
 
 export async function turn(params: TurnParams): Promise<{
   messages: Anthropic.MessageParam[]
-  ended: boolean
   usage: {
     input_tokens: number
     output_tokens: number
@@ -65,7 +64,6 @@ export async function turn(params: TurnParams): Promise<{
   } = params
   const definitions = tools.map((t) => t.definition)
 
-  let ended = false
   let rounds = 0
   let tainted = false
 
@@ -128,7 +126,6 @@ export async function turn(params: TurnParams): Promise<{
           const outcome = await executeTool(tools, p, tainted)
           results.push(outcome.result)
           tainted ||= outcome.tainted
-          ended ||= outcome.ended
         })
         .with({ type: 'thinking' }, () => {
           onThinking?.()
@@ -143,7 +140,6 @@ export async function turn(params: TurnParams): Promise<{
       log.warn({ maxTokens }, 'Hit max_tokens, output truncated')
       return {
         messages: conversation,
-        ended: false,
         usage: usageTotals,
         rounds,
         truncated: true,
@@ -153,20 +149,16 @@ export async function turn(params: TurnParams): Promise<{
     if (response.stop_reason !== 'tool_use') {
       return {
         messages: conversation,
-        ended: false,
         usage: usageTotals,
         rounds,
       }
     }
 
     conversation.push({ role: 'user', content: results })
-
-    if (ended) return { ended: true, messages: conversation, usage: usageTotals, rounds }
   }
 
   return {
     messages: conversation,
-    ended: false,
     usage: usageTotals,
     rounds,
   }

@@ -96,7 +96,7 @@ export async function messageHandler(
         message.channel.sendTyping().catch(() => {})
       },
       onText: async (text) => {
-        await postPendingTools(message.channel, pendingTools)
+        await postPendingTools(message.channel, tools, pendingTools)
         const tidy = text
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
           .trim()
@@ -122,7 +122,7 @@ export async function messageHandler(
       },
       tools,
     })
-    await postPendingTools(message.channel, pendingTools)
+    await postPendingTools(message.channel, tools, pendingTools)
 
     await insertUsage({
       in_reply_to: message.id,

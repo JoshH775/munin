@@ -14,7 +14,7 @@ import { listEphemeralChannelIds } from '../repositories/channelSettings'
 import { deleteMessages, getLatestMessage, insertMessage } from '../repositories/messages'
 import { getDueReminders, markReminderSent } from '../repositories/reminders'
 import { getAppSettings } from '../repositories/appSettings'
-import { toolLabels } from '../ai/toolLabels'
+import type { Tool } from '../ai/makeTool'
 import { log } from '../logger'
 
 // Chunk text to fit Discord's 2000-char message limit, breaking on newlines where possible.
@@ -32,18 +32,23 @@ export function splitForDiscord(text: string): string[] {
 }
 
 // Post the pending tool calls as one subtext line ("-# Read 3 pages · Set 1 reminder"), tallying
-// repeats. Empties `names`; anything without a label (not a real tool) is dropped.
-export async function postPendingTools(channel: Channel, names: string[]): Promise<void> {
+// repeats. Empties `names`; a name not matching one of `tools` is dropped.
+export async function postPendingTools(
+  channel: Channel,
+  tools: Tool<any>[],
+  names: string[],
+): Promise<void> {
+  const labels = new Map(tools.map((t) => [t.definition.name, t.label]))
   const counts = new Map<string, number>()
   for (const name of names.splice(0)) {
-    if (Object.hasOwn(toolLabels, name)) counts.set(name, (counts.get(name) ?? 0) + 1)
+    if (labels.has(name)) counts.set(name, (counts.get(name) ?? 0) + 1)
   }
   if (counts.size === 0 || !channel.isSendable()) return
   const body =
     '-# ' +
     counts
       .entries()
-      .map(([name, n]) => toolLabels[name](n))
+      .map(([name, n]) => labels.get(name)!(n))
       .toArray()
       .join(' · ')
   const sent = await channel.send(body).catch(() => null)

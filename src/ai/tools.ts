@@ -14,6 +14,9 @@ import { getAppSettings } from '../repositories/appSettings'
 import { getAllThreads } from '../discord/utils'
 import { searchMessages } from '../repositories/messages'
 
+// A friendly status phrase count, given how many times a tool ran this flush.
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
 const apiKey = process.env.TAVILY_API_KEY
 const tavilyClient = apiKey ? tavily({ apiKey }) : null
 
@@ -21,6 +24,7 @@ const tavilyClient = apiKey ? tavily({ apiKey }) : null
 export function tavilySearchTool(trustedUrls: Set<string>) {
   return makeTool({
     name: 'web_search',
+    label: (n) => (n === 1 ? 'Searched the web' : `Ran ${n} web searches`),
     description:
       'Search the web for current or factual information. Returns the top few results as title, ' +
       'URL, and a short snippet, which is usually enough to answer from directly. Reach for it when ' +
@@ -57,6 +61,7 @@ export function tavilySearchTool(trustedUrls: Set<string>) {
 export function tavilyExtractTool(trustedUrls: Set<string>) {
   return makeTool({
     name: 'web_extract',
+    label: (n) => `Read ${plural(n, 'page')}`,
     description:
       'Open one or more web pages by URL and read their real content, beyond the snippet a ' +
       'search returns. Use it to verify a detail or read something in full when a snippet is ' +
@@ -116,6 +121,7 @@ export function updateMemoryTool(channelId: string, parentChannelId: string | nu
   const isThread = parentChannelId !== null
   return makeTool({
     name: 'update_memory',
+    label: () => 'Updated memory',
     description:
       "Rewrite memory. Memory is a living document you keep current, not a log: pass the full new text for a tier, preserving what still matters and folding in anything worth remembering. Each field replaces that tier's memory entirely, so never send a fragment or a diff. " +
       (isThread
@@ -170,6 +176,7 @@ export function startWorkTool(channelName: string) {
       .replace(/^-+|-+$/g, '') || 'work'
   return makeTool({
     name: 'start_work',
+    label: (n) => `Handed off ${plural(n, 'task')} to Claude Code`,
     description:
       'Dispatch a coding task to a Claude Code session running in a detached tmux session on this machine. ' +
       'Use this to hand real work off to Claude Code — you never do the work yourself. ' +
@@ -216,6 +223,7 @@ export function startWorkTool(channelName: string) {
 export function channelTreeTool(client: Client, guild: Guild) {
   return makeTool({
     name: 'channel_tree',
+    label: () => 'Looked at the channels',
     description:
       "Show the server's channels grouped by category, each channel and category with its id, and any threads nested under their channel. Reach for it to see what exists and grab the ids you need before linking a channel or thread with `<#id>`, creating or deleting a category, or moving a channel.",
     inputSchema: z.object({}),
@@ -267,6 +275,7 @@ export function channelTreeTool(client: Client, guild: Guild) {
 export function createCategoryTool(client: Client, guild: Guild) {
   return makeTool({
     name: 'create_category',
+    label: (n) => `Created ${plural(n, 'category', 'categories')}`,
     description:
       'Create a new empty category by name and return its id, so you can then move channels into it. Fails if a category with that name already exists.',
     inputSchema: z.object({
@@ -295,6 +304,7 @@ export function createCategoryTool(client: Client, guild: Guild) {
 export function deleteCategoryTool(client: Client) {
   return makeTool({
     name: 'delete_category',
+    label: (n) => `Deleted ${plural(n, 'category', 'categories')}`,
     description:
       'Delete a category by id. Its channels are not deleted — they just become uncategorised. Reports how many were orphaned.',
     inputSchema: z.object({
@@ -319,6 +329,7 @@ export function deleteCategoryTool(client: Client) {
 export function setChannelCategoryTool(client: Client) {
   return makeTool({
     name: 'set_channel_category',
+    label: (n) => `Moved ${plural(n, 'channel')}`,
     description:
       'Move a text channel into a category, or out of any category. Pass the channel id and the target category id (or null to remove it from its category). Get the ids from channel_tree.',
     inputSchema: z.object({
@@ -354,6 +365,7 @@ export function setChannelCategoryTool(client: Client) {
 export function createReminderTool(client: Client, setById: string) {
   return makeTool({
     name: 'create_reminder',
+    label: (n) => `Set ${plural(n, 'reminder')}`,
     description:
       'Schedule a one-off reminder to post at a future time. Give the time as a UTC ISO 8601 ' +
       'datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is in your context, ' +
@@ -395,6 +407,7 @@ export function createReminderTool(client: Client, setById: string) {
 export function deleteReminderTool() {
   return makeTool({
     name: 'delete_reminder',
+    label: (n) => `Cancelled ${plural(n, 'reminder')}`,
     description:
       'Delete a pending reminder by its id so it never fires. The id is the one create_reminder ' +
       'returned. Does nothing if the reminder has already fired or the id is unknown.',
@@ -411,6 +424,7 @@ export function deleteReminderTool() {
 export function listRemindersTool() {
   return makeTool({
     name: 'list_reminders',
+    label: () => 'Checked reminders',
     description:
       'List every pending reminder with its id, time, channel, and content, so you can tell the ' +
       'user what is scheduled or find the id to cancel one with delete_reminder.',
@@ -431,6 +445,7 @@ export function listRemindersTool() {
 export function searchMessagesTool(client: Client) {
   return makeTool({
     name: 'search_messages',
+    label: (n) => `Searched messages ${plural(n, 'time')}`,
     description:
       'Search the stored message history, reaching past the recent messages you are shown for the ' +
       'current channel. Use it when the user refers back to something older than what is in front of ' +
@@ -467,6 +482,7 @@ export function searchMessagesTool(client: Client) {
 export function renameCategoryTool(client: Client) {
   return makeTool({
     name: 'rename_category',
+    label: (n) => `Renamed ${plural(n, 'category', 'categories')}`,
     description:
       'Rename a category by id. Pass the category id and the new name. Get the ids from channel_tree.',
     inputSchema: z.object({

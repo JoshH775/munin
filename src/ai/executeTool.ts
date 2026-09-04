@@ -9,7 +9,6 @@ export async function executeTool(
 ): Promise<{
   result: Anthropic.ToolResultBlockParam
   tainted: boolean
-  ended: boolean
 }> {
   const start = Date.now()
   log.info({ tool: p.name, input: JSON.stringify(p.input).slice(0, 140) }, 'Tool call')
@@ -25,7 +24,6 @@ export async function executeTool(
         is_error: true,
       },
       tainted: false,
-      ended: false,
     }
   }
 
@@ -41,7 +39,6 @@ export async function executeTool(
           'Blocked by the exfil guardrail: this turn has already read untrusted content, so tools that can reach an external destination are disabled for the rest of this turn. Ask again in a new message and I can do it.',
       },
       tainted: false,
-      ended: false,
     }
   }
 
@@ -52,7 +49,6 @@ export async function executeTool(
       result: { type: 'tool_result', tool_use_id: p.id, content },
       // deltas apply only on success, so a tool that threw leaves the model room to recover
       tainted: tool.readsUntrusted ?? false,
-      ended: tool.terminal ?? false,
     }
   } catch (err) {
     log.warn({ tool: p.name, ms: Date.now() - start, err }, 'Tool failed')
@@ -64,7 +60,6 @@ export async function executeTool(
         is_error: true,
       },
       tainted: false,
-      ended: false,
     }
   }
 }
