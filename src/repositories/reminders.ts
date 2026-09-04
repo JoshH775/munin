@@ -2,14 +2,8 @@ import type { Insertable, Selectable } from 'kysely'
 import type { Reminders } from '../db/types'
 import { db } from '../db'
 
-export async function insertNewReminder(
-  reminder: Insertable<Reminders>
-): Promise<{ id: string }> {
-  return db
-    .insertInto('reminders')
-    .values(reminder)
-    .returning('id')
-    .executeTakeFirstOrThrow()
+export async function insertNewReminder(reminder: Insertable<Reminders>): Promise<{ id: string }> {
+  return db.insertInto('reminders').values(reminder).returning('id').executeTakeFirstOrThrow()
 }
 
 // Pending reminders whose time has come, for the poller to deliver.
@@ -32,22 +26,21 @@ export async function getPendingReminders(): Promise<Selectable<Reminders>[]> {
 }
 
 export async function markReminderSent(id: string): Promise<void> {
-  await db
-    .updateTable('reminders')
-    .set({ status: 'sent' })
-    .where('id', '=', id)
-    .execute()
+  await db.updateTable('reminders').set({ status: 'sent' }).where('id', '=', id).execute()
 }
 
 // Set when the user clicks the acknowledgement button on a delivered reminder.
 export async function markReminderReceived(id: string): Promise<void> {
+  await db.updateTable('reminders').set({ received: true }).where('id', '=', id).execute()
+}
+
+export async function snoozeReminder(id: string): Promise<void> {
   await db
     .updateTable('reminders')
-    .set({ received: true })
+    .set({ date: new Date(Date.now() + 60 * 60 * 1000) }) // snooze for 1 hour
     .where('id', '=', id)
     .execute()
 }
-
 // Delete a pending reminder outright so it never fires. Returns rows removed
 // (0 if the id is unknown or the reminder has already fired).
 export async function deleteReminder(id: string): Promise<number> {
