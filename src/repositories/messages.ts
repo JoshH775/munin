@@ -21,9 +21,8 @@ export async function deleteChannelMessages(channelId: string): Promise<void> {
   await db.deleteFrom('messages').where('channel_id', '=', channelId).execute()
 }
 
-
 export async function getLatestMessage(
-  channelId: string
+  channelId: string,
 ): Promise<{ id: string; sent_at: Date } | null> {
   const row = await db
     .selectFrom('messages')
@@ -64,20 +63,23 @@ export async function getMessagesSince({
     .execute()
 }
 
-
 export function toChatTranscript(
   messages: Selectable<Messages>[],
-  botUserId: string
+  botUserId: string,
 ): Anthropic.MessageParam[] {
   const params = messages
     .filter((m) => m.content.trim()) // drop contentless messages (attachments, embeds, system events)
-    .filter((m) => m.user_id !== botUserId || m.kind === 'chat')
-    .map(
-      (m): Anthropic.MessageParam => ({
-        role: m.user_id === botUserId ? 'assistant' : 'user',
-        content: m.content,
-      })
+    // keep user messages and munin's real replies; drop its own status lines. munin's replies never
+    // start with '-# ' (its tool summaries do); the oldest tool rows are bare 'Tool used:'.
+    .filter(
+      (m) =>
+        m.user_id !== botUserId ||
+        (!m.content.startsWith('-# ') && !m.content.startsWith('Tool used:')),
     )
+    .map((m): Anthropic.MessageParam => ({
+      role: m.user_id === botUserId ? 'assistant' : 'user',
+      content: m.content,
+    }))
   const firstUser = params.findIndex((p) => p.role === 'user')
   const transcript = firstUser === -1 ? [] : params.slice(firstUser)
   const last = transcript.at(-1)
