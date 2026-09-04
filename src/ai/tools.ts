@@ -12,7 +12,6 @@ import {
   ChannelType,
   Guild,
   TextChannel,
-  type AnyThreadChannel,
   type Client,
 } from 'discord.js'
 import { log } from '../logger'
