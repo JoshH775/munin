@@ -5,6 +5,7 @@ cd /srv/munin
 
 echo "▶ pull";     git pull --ff-only
 echo "▶ deps";     pnpm install --frozen-lockfile
+echo "▶ typecheck"; pnpm exec tsc --noEmit
 echo "▶ db up";    docker compose up -d --wait
 echo "▶ migrate";  pnpm exec tsx scripts/migrate.ts push
 echo "▶ reload";   sudo systemctl daemon-reload
