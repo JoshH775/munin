@@ -11,6 +11,8 @@ import {
   setChannelCategoryTool,
   createCategoryTool,
   channelTreeTool,
+  renameCategoryTool,
+  searchMessagesTool,
 } from '../ai/tools'
 import { resolveSettings } from '../repositories/channelSettings'
 import { insertMessage, getConversation, toChatTranscript } from '../repositories/messages'
@@ -67,6 +69,8 @@ export async function messageHandler(
       deleteReminderTool(),
       listRemindersTool(),
       deleteCategoryTool(client),
+      renameCategoryTool(client),
+      searchMessagesTool(client),
       setChannelCategoryTool(client),
       ...(message.guild
         ? [createCategoryTool(client, message.guild), channelTreeTool(client, message.guild)]

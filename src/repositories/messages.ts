@@ -88,3 +88,18 @@ export function toChatTranscript(
   }
   return transcript
 }
+
+export async function searchMessages(opts: {
+  channelId?: string
+  since?: string
+  query?: string
+  limit?: number
+}): Promise<Selectable<Messages>[]> {
+  const { channelId, since, query, limit } = opts
+  let q = db.selectFrom('messages').selectAll()
+  if (channelId) q = q.where('channel_id', '=', channelId)
+  if (since) q = q.where('sent_at', '>=', new Date(since))
+  if (query) q = q.where('content', 'ilike', `%${query}%`)
+  if (limit) q = q.limit(limit)
+  return q.orderBy('sent_at', 'desc').execute()
+}

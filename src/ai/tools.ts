@@ -7,17 +7,12 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { makeTool } from './makeTool'
 import { updateMemory } from '../repositories/channelSettings'
-import {
-  CategoryChannel,
-  ChannelType,
-  Guild,
-  TextChannel,
-  type Client,
-} from 'discord.js'
+import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
 import { log } from '../logger'
 import { insertNewReminder, deleteReminder, getPendingReminders } from '../repositories/reminders'
 import { getAppSettings } from '../repositories/appSettings'
 import { getAllThreads } from '../discord/utils'
+import { searchMessages } from '../repositories/messages'
 
 const apiKey = process.env.TAVILY_API_KEY
 const tavilyClient = apiKey ? tavily({ apiKey }) : null
@@ -429,6 +424,63 @@ export function listRemindersTool() {
             `${r.id} — ${r.date.toISOString()} — ${r.channel_id ? `<#${r.channel_id}>` : 'default channel'} — ${r.content}`,
         )
         .join('\n')
+    },
+  })
+}
+
+export function searchMessagesTool(client: Client) {
+  return makeTool({
+    name: 'search_messages',
+    description:
+      'Search the stored message history, reaching past the recent messages you are shown for the ' +
+      'current channel. Use it when the user refers back to something older than what is in front of ' +
+      'you, or asks what was said about a topic. It matches messages whose text contains the `query`, ' +
+      'across every channel unless you scope it with `channelId`, and returns them newest first with ' +
+      'the channel, author, and time of each. Your own messages are left out.',
+    inputSchema: z.object({
+      query: z.string().optional().describe('Search term to match in message content.'),
+      channelId: z.string().optional().describe('Optional channel to restrict the search to.'),
+      limit: z
+        .number()
+        .optional()
+        .describe('Optional maximum number of results to return. Default is 50.'),
+      since: z.iso
+        .datetime()
+        .optional()
+        .describe(
+          'Optional ISO 8601 datetime to restrict the search to messages sent after this time.',
+        ),
+    }),
+    run: async (args) => {
+      const { query, channelId, limit = 50, since } = args
+      const results = await searchMessages({
+        query,
+        channelId,
+        limit,
+        since,
+      })
+      return JSON.stringify(results.filter((m) => m.user_id !== client.user?.id))
+    },
+  })
+}
+
+export function renameCategoryTool(client: Client) {
+  return makeTool({
+    name: 'rename_category',
+    description:
+      'Rename a category by id. Pass the category id and the new name. Get the ids from channel_tree.',
+    inputSchema: z.object({
+      categoryId: z.string().describe('The id of the category to rename.'),
+      newName: z.string().describe('The new name for the category.'),
+    }),
+    run: async ({ categoryId, newName }) => {
+      const category = client.channels.cache.get(categoryId)
+      if (category?.type !== ChannelType.GuildCategory) {
+        throw new Error(`No category found with id ${categoryId}.`)
+      }
+      const oldName = category.name
+      await category.setName(newName)
+      return `Renamed category "${oldName}" (${categoryId}) to "${newName}".`
     },
   })
 }
