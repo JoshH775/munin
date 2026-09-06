@@ -500,3 +500,94 @@ export function renameCategoryTool(client: Client) {
     },
   })
 }
+
+export function postMessageTool(client: Client) {
+  return makeTool({
+    name: 'post_message',
+    description:
+      'Post a new message to a specific channel or thread by id, not necessarily the one you are in. ' +
+      'Use it to say something in a different channel, like leaving a note where it belongs or flagging ' +
+      'something elsewhere; get ids from channel_tree. This is not how you reply to the current ' +
+      'conversation (that is just the text you write back), so reach for it only when you mean a specific other channel.',
+    inputSchema: z.object({
+      channelId: z.string().describe('The id of the channel or thread to post in.'),
+      content: z.string().describe('The message content to post.'),
+    }),
+    label(n) {
+      return `Posted ${plural(n, 'message')}`
+    },
+    run: async ({ channelId, content }) => {
+      const channel = await client.channels.fetch(channelId).catch(() => null)
+      if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+        throw new Error(
+          'No text channel or thread with that id. Call channel_tree for the list of ids.',
+        )
+      }
+      const sent = await channel.send({ content })
+      return `Posted message in <#${channelId}> (id ${sent.id}).`
+    },
+  })
+}
+ 
+export function editMessageTool(client: Client) {
+  return makeTool({
+    name: 'edit_message',
+    description:
+      'Edit one of your own past messages by id, replacing its whole content (Discord only lets a bot ' +
+      'edit messages it sent). Pass the channel or thread id and the message id, from search_messages or ' +
+      'the recent transcript. Use it to fix or update something you posted rather than posting a correction.',
+    inputSchema: z.object({
+      channelId: z.string().describe('The id of the channel or thread containing the message.'),
+      messageId: z.string().describe('The id of the message to edit.'),
+      newContent: z.string().describe('The new content for the message.'),
+    }),
+    label(n) {
+      return `Edited ${plural(n, 'message')}`
+    },
+    run: async ({ messageId, newContent, channelId }) => {
+      const channel = await client.channels.fetch(channelId).catch(() => null)
+      if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+        throw new Error(
+          'No text channel or thread with that id. Call channel_tree for the list of ids.',
+        )
+      }
+      const message = await channel.messages.fetch(messageId).catch(() => null)
+      if (!message) {
+        throw new Error(`No message found with id ${messageId} in channel ${channelId}.`)
+      }
+      await message.edit({ content: newContent })
+      return `Edited message ${messageId} in <#${channelId}>.`
+    }
+  })
+}
+
+export function pinMessageTool(client: Client) {
+  return makeTool({
+    name: 'pin_message',
+    description:
+      'Pin a message by id so it stays at the top of its channel or thread. Pass the channel or thread ' +
+      'id and the message id, from search_messages or the recent transcript. Reach for it when the user ' +
+      'asks to pin something, or when a message is worth keeping handy.',
+    inputSchema: z.object({
+      channelId: z.string().describe('The id of the channel or thread containing the message.'),
+      messageId: z.string().describe('The id of the message to pin.'),
+    }),
+    label(n) {
+      return `Pinned ${plural(n, 'message')}`
+    },
+    run: async ({ messageId, channelId }) => {
+      const channel = await client.channels.fetch(channelId).catch(() => null)
+      if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+        throw new Error(
+          'No text channel or thread with that id. Call channel_tree for the list of ids.',
+        )
+      }
+      const message = await channel.messages.fetch(messageId).catch(() => null)
+      if (!message) {
+        throw new Error(`No message found with id ${messageId} in channel ${channelId}.`)
+      }
+      await message.pin()
+      return `Pinned message ${messageId} in <#${channelId}>.`
+    }
+  })
+}

@@ -15,6 +15,9 @@ import {
   channelTreeTool,
   renameCategoryTool,
   searchMessagesTool,
+  pinMessageTool,
+  postMessageTool,
+  editMessageTool,
 } from '../ai/tools'
 import { resolveSettings } from '../repositories/channelSettings'
 import { resolveMemory } from '../repositories/memory'
@@ -80,6 +83,9 @@ export async function messageHandler(
       deleteCategoryTool(client),
       renameCategoryTool(client),
       searchMessagesTool(client),
+      pinMessageTool(client),
+      postMessageTool(client),
+      editMessageTool(client),
       setChannelCategoryTool(client),
       ...(message.guild
         ? [createCategoryTool(client, message.guild), channelTreeTool(client, message.guild)]
