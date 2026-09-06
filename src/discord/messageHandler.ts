@@ -85,6 +85,7 @@ export async function messageHandler(
       .join('\n\n')
     // Tool calls buffer here and post as one line before munin next speaks and at turn end.
     const pendingTools: string[] = []
+    let lastToolName: string | null = null
     const turnStart = Date.now()
 
     let typing: ReturnType<typeof setInterval> | null = null
@@ -126,8 +127,13 @@ export async function messageHandler(
           })
         }
       },
-      onToolUse: (tool) => {
+      onToolUse: async (tool) => {
+        if (tool.name !== lastToolName) {
+          lastToolName = tool.name
+          await postPendingTools(message.channel, tools, pendingTools)
+        }
         pendingTools.push(tool.name)
+        
       },
       tools,
     }).finally(stopTyping)
