@@ -1,23 +1,12 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import Anthropic from '@anthropic-ai/sdk'
 import { sql } from 'kysely'
 import { db } from '../db'
 import { type Effort } from '../ai'
 
-const globalPersona = readFileSync(
-  fileURLToPath(new URL('../../system.md', import.meta.url)),
-  'utf8',
-).trim()
-
 export type ChannelSettings = {
   channelId: string
-  parentChannelId: string | null
   model: Anthropic.Model
   effort: Effort
-  persona: string
-  memory: string
-  parentMemoryChannelId: string
   enabled: boolean
   ephemeral: boolean
 }
@@ -45,38 +34,11 @@ export async function resolveSettings(
 
   return {
     channelId,
-    parentChannelId,
     model: own?.model ?? parent?.model ?? global.model,
     effort: own?.effort ?? parent?.effort ?? global.effort,
-    persona: [globalPersona, parent?.system_prompt, own?.system_prompt]
-      .filter(Boolean)
-      .join('\n\n'),
-    memory: [
-      global.memory.trim() && `# Global memory\n${global.memory.trim()}`,
-      parent?.memory.trim() && `# Channel memory\n${parent.memory.trim()}`,
-      own?.memory.trim() &&
-        `# ${parentChannelId ? 'Thread' : 'Channel'} memory\n${own.memory.trim()}`,
-    ]
-      .filter(Boolean)
-      .join('\n\n'),
-    parentMemoryChannelId: parentChannelId ?? 'global',
     enabled: !(own?.disabled_at || parent?.disabled_at || global.disabled_at),
     ephemeral: !!(own?.ephemeral || parent?.ephemeral),
   }
-}
-
-export async function updateMemory({
-  channelId,
-  memory,
-}: {
-  channelId: string
-  memory: string
-}): Promise<void> {
-  await db
-    .insertInto('channel_settings')
-    .values({ channel_id: channelId, memory })
-    .onConflict((oc) => oc.column('channel_id').doUpdateSet({ memory, updated_at: sql`now()` }))
-    .execute()
 }
 
 export async function updateConfig({
@@ -86,7 +48,6 @@ export async function updateConfig({
   channelId: string
   model?: Anthropic.Model | null
   effort?: Effort | null
-  system_prompt?: string | null
 }): Promise<void> {
   await db
     .insertInto('channel_settings')

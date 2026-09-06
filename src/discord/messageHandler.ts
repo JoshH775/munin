@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { Message, ChannelType, Client, type OmitPartialGroupDMChannel } from 'discord.js'
 import { turn } from '../ai'
 import {
@@ -15,11 +17,17 @@ import {
   searchMessagesTool,
 } from '../ai/tools'
 import { resolveSettings } from '../repositories/channelSettings'
+import { resolveMemory } from '../repositories/memory'
 import { insertMessage, getConversation, toChatTranscript } from '../repositories/messages'
 import { insertUsage } from '../repositories/usage'
 import { findUrls } from '../urls'
 import { postPendingTools, splitForDiscord } from './utils'
 import { log } from '../logger'
+
+const persona = readFileSync(
+  fileURLToPath(new URL('../../system.md', import.meta.url)),
+  'utf8',
+).trim()
 
 export async function messageHandler(
   client: Client,
@@ -44,9 +52,10 @@ export async function messageHandler(
       sent_at: message.createdAt,
     })
 
-    const [history, settings] = await Promise.all([
+    const [history, settings, memory] = await Promise.all([
       getConversation({ channelId }),
       resolveSettings(channelId, parentChannelId),
+      resolveMemory(channelId, parentChannelId),
     ])
 
     if (!settings.enabled) {
@@ -79,7 +88,7 @@ export async function messageHandler(
     const systemSuffix = [
       `The current date and time is ${message.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
       `You are in ${channelName}.`,
-      settings.memory.trim() && `<memory>\n${settings.memory}\n</memory>`,
+      memory.trim() && `<memory>\n${memory}\n</memory>`,
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -97,7 +106,7 @@ export async function messageHandler(
       messages: transcript,
       model: settings.model,
       effort: settings.effort,
-      system: settings.persona,
+      system: persona,
       systemSuffix,
       onRoundStart: () => {
         stopTyping() // never stack two intervals across rounds
