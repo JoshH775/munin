@@ -14,7 +14,8 @@
     "db:types": "kysely-codegen --dialect postgres --out-file src/db/types.ts",
     "db:up": "docker compose -f docker-compose.dev.yml up -d --wait",
     "db:down": "docker compose -f docker-compose.dev.yml down",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "model-test": "tsx scripts/model-test.ts"
   },
   "keywords": [],
   "author": "",
