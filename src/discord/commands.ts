@@ -6,6 +6,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js'
 import { efforts, listModelIds, type Effort } from '../ai'
+import { resolveMemory } from '../repositories/memory'
 import {
   resolveSettings,
   toggleChannelMute,
@@ -135,8 +136,7 @@ export async function handleMemoryInteraction(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   const parentChannelId = interaction.channel?.isThread() ? interaction.channel.parentId : null
-  const s = await resolveSettings(interaction.channelId, parentChannelId)
-  const text = s.memory.trim()
+  const text = (await resolveMemory(interaction.channelId, parentChannelId)).trim()
   const embed = new EmbedBuilder()
     .setTitle('Memory')
     .setDescription(

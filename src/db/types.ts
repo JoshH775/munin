@@ -31,9 +31,15 @@ export interface ChannelSettings {
   disabled_at: Timestamp | null;
   effort: EffortLevel | null;
   ephemeral: Generated<boolean>;
-  memory: Generated<string>;
   model: string | null;
-  system_prompt: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Memory {
+  as_of: Timestamp;
+  channel_id: string;
+  content: string;
+  created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
 
@@ -75,6 +81,7 @@ export interface DB {
   _migrations: _Migrations;
   app_settings: AppSettings;
   channel_settings: ChannelSettings;
+  memory: Memory;
   messages: Messages;
   reminders: Reminders;
   usage: Usage;
