@@ -21,17 +21,16 @@ export interface _Migrations {
 }
 
 export interface AppSettings {
+  chat_model: string;
+  effort: EffortLevel;
   id: Generated<boolean>;
-  reminder_channel_id: string | null;
 }
 
 export interface ChannelSettings {
   channel_id: string;
   created_at: Generated<Timestamp>;
-  disabled_at: Timestamp | null;
-  effort: EffortLevel | null;
   ephemeral: Generated<boolean>;
-  model: string | null;
+  muted: Generated<boolean>;
   updated_at: Generated<Timestamp>;
 }
 
