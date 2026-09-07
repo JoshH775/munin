@@ -148,6 +148,14 @@ export async function dispatchReminders(client: Client): Promise<void> {
         .setCustomId(`reminder_ack:${reminder.id}`)
         .setLabel('Got it')
         .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`reminder_snooze_5min:${reminder.id}`)
+        .setLabel('Snooze 5 min')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`reminder_snooze_1hr:${reminder.id}`)
+        .setLabel('Snooze 1 hour')
+        .setStyle(ButtonStyle.Secondary),
     )
     try {
       const sent = await channel.send({

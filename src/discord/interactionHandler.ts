@@ -27,12 +27,26 @@ export async function interactionHandler(interaction: Interaction): Promise<void
         }
         return
       })
-      .with({ action: 'reminder_snooze' }, async ({ id }) => {
+      .with({ action: 'reminder_snooze_1hr' }, async ({ id }) => {
         try {
-          await snoozeReminder(id)
+          await snoozeReminder(id, 60)
           const embed = EmbedBuilder.from(interaction.message.embeds[0])
             .setColor(0xf1c40f)
-            .setFooter({ text: `Snoozed by ${interaction.user.username}` })
+            .setFooter({ text: 'Snoozed for 1 hour' })
+          await interaction.update({ embeds: [embed], components: [] })
+          await new Promise((r) => setTimeout(r, 3000))
+          await interaction.deleteReply()
+        } catch (err) {
+          log.error({ err, customId: interaction.customId }, 'Reminder snooze failed')
+        }
+        return
+      })
+      .with({ action: 'reminder_snooze_5min' }, async ({ id }) => {
+        try {
+          await snoozeReminder(id, 5)
+          const embed = EmbedBuilder.from(interaction.message.embeds[0])
+            .setColor(0xf1c40f)
+            .setFooter({ text: 'Snoozed for 5 minutes.' })
           await interaction.update({ embeds: [embed], components: [] })
           await new Promise((r) => setTimeout(r, 3000))
           await interaction.deleteReply()

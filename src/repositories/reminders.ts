@@ -34,10 +34,11 @@ export async function markReminderReceived(id: string): Promise<void> {
   await db.updateTable('reminders').set({ received: true }).where('id', '=', id).execute()
 }
 
-export async function snoozeReminder(id: string): Promise<void> {
+export async function snoozeReminder(id: string, minutes: number): Promise<void> {
+  const date = new Date(Date.now() + (minutes * 60 * 1000))
   await db
     .updateTable('reminders')
-    .set({ date: new Date(Date.now() + 60 * 60 * 1000) }) // snooze for 1 hour
+    .set({ date, status: 'pending' })
     .where('id', '=', id)
     .execute()
 }
