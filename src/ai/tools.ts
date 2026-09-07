@@ -271,31 +271,35 @@ export function channelTreeTool(client: Client, guild: Guild) {
   })
 }
 
-export function createCategoryTool(client: Client, guild: Guild) {
+export function createChannelTool(guild: Guild) {
   return makeTool({
-    name: 'create_category',
-    label: (n) => `Created ${plural(n, 'category', 'categories')}`,
+    name: 'create_channel',
+    label: (n) => `Created ${plural(n, 'channel')}`,
     description:
-      'Create a new empty category by name and return its id, so you can then move channels into it. Fails if a category with that name already exists.',
+      'Create a new text channel or category by name and return its id. A new text channel lands outside any category; move it with set_channel_category. Fails if something of the same type with that name already exists.',
     inputSchema: z.object({
-      name: z.string().describe('The name for the new category.'),
+      type: z
+        .enum(['text', 'category'])
+        .describe('Whether to create a text channel or a category.'),
+      name: z.string().describe('The name for the new channel or category.'),
     }),
-    run: async (args) => {
-      const existingNames = client.channels.cache
-        .values()
-        .filter((c): c is CategoryChannel => c.type === ChannelType.GuildCategory)
-        .toArray()
-        .map((c) => c.name.toLowerCase())
-      if (existingNames.includes(args.name.toLowerCase())) {
-        throw new Error(`A category named "${args.name}" already exists.`)
+    run: async ({ type, name }) => {
+      const channelType = type === 'text' ? ChannelType.GuildText : ChannelType.GuildCategory
+      const wanted =
+        type === 'text' ? name.trim().toLowerCase().replace(/\s+/g, '-') : name.toLowerCase()
+      const taken = guild.channels.cache.some(
+        (c) => c.type === channelType && c.name.toLowerCase() === wanted,
+      )
+      if (taken) {
+        throw new Error(
+          `A ${type === 'text' ? 'text channel' : 'category'} named "${name}" already exists.`,
+        )
       }
 
-      const category = await guild.channels.create({
-        name: args.name,
-        type: ChannelType.GuildCategory,
-      })
-
-      return `Created category "${args.name}" (${category.id}).`
+      const created = await guild.channels.create({ name, type: channelType })
+      return type === 'text'
+        ? `Created text channel #${created.name} (${created.id}).`
+        : `Created category "${created.name}" (${created.id}).`
     },
   })
 }
@@ -518,7 +522,7 @@ export function postMessageTool(client: Client) {
     },
   })
 }
- 
+
 export function editMessageTool(client: Client) {
   return makeTool({
     name: 'edit_message',
@@ -547,7 +551,7 @@ export function editMessageTool(client: Client) {
       }
       await message.edit({ content: newContent })
       return `Edited message ${messageId} in <#${channelId}>.`
-    }
+    },
   })
 }
 
@@ -578,6 +582,6 @@ export function pinMessageTool(client: Client) {
       }
       await message.pin()
       return `Pinned message ${messageId} in <#${channelId}>.`
-    }
+    },
   })
 }
