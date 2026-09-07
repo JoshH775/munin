@@ -1,12 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { sql } from 'kysely'
 import { db } from '../db'
-import { type Effort } from '../ai'
 
 export type ChannelSettings = {
-  channelId: string
-  model: Anthropic.Model
-  effort: Effort
   enabled: boolean
   ephemeral: boolean
 }
@@ -15,52 +10,35 @@ export async function resolveSettings(
   channelId: string,
   parentChannelId: string | null,
 ): Promise<ChannelSettings> {
-  const ids = [channelId, parentChannelId, 'global'].filter((id): id is string => id !== null)
+  const ids = [channelId, parentChannelId].filter((id): id is string => id !== null)
   const rows = await db
     .selectFrom('channel_settings')
     .selectAll()
     .where('channel_id', 'in', ids)
     .execute()
 
-  const global = rows.find((r) => r.channel_id === 'global')
-  if (!global) {
-    throw new Error('Global settings row not found')
-  }
-  if (global.model == null || global.effort == null) {
-    throw new Error('Global row is missing default model/effort')
-  }
+  const own = rows.find((r) => r.channel_id === channelId)
   const parent = parentChannelId ? rows.find((r) => r.channel_id === parentChannelId) : undefined
-  const own = rows.find((r) => r.channel_id === channelId && r.channel_id !== 'global')
 
   return {
-    channelId,
-    model: own?.model ?? parent?.model ?? global.model,
-    effort: own?.effort ?? parent?.effort ?? global.effort,
-    enabled: !(own?.disabled_at || parent?.disabled_at || global.disabled_at),
+    enabled: !own?.muted,
     ephemeral: !!(own?.ephemeral || parent?.ephemeral),
   }
 }
 
-export async function updateConfig({
-  channelId,
-  ...patch
-}: {
-  channelId: string
-  model?: Anthropic.Model | null
-  effort?: Effort | null
-}): Promise<void> {
+// set (not toggle) the mute for a channel. /mute passes true, /unmute passes false.
+export async function setMuted(channelId: string, muted: boolean): Promise<void> {
   await db
     .insertInto('channel_settings')
-    .values({ channel_id: channelId, ...patch })
-    .onConflict((oc) => oc.column('channel_id').doUpdateSet({ ...patch, updated_at: sql`now()` }))
+    .values({ channel_id: channelId, muted })
+    .onConflict((oc) => oc.column('channel_id').doUpdateSet({ muted, updated_at: sql`now()` }))
     .execute()
 }
 
-// remove settings rows for deleted channels/threads. never touches the reserved global row.
+// remove settings rows for deleted channels/threads.
 export async function deleteSettings(channelIds: string[]): Promise<void> {
-  const ids = channelIds.filter((id) => id !== 'global')
-  if (ids.length === 0) return
-  await db.deleteFrom('channel_settings').where('channel_id', 'in', ids).execute()
+  if (channelIds.length === 0) return
+  await db.deleteFrom('channel_settings').where('channel_id', 'in', channelIds).execute()
 }
 
 // toggles the ephemeral flag for a channel. returns true if now ephemeral, false if not.
@@ -89,25 +67,4 @@ export async function listEphemeralChannelIds(): Promise<string[]> {
     .where('ephemeral', '=', true)
     .execute()
   return rows.map((r) => r.channel_id)
-}
-
-// toggles the mute for one channel (or 'global'). returns true if now muted, false if now unmuted.
-export async function toggleChannelMute(channelId: string): Promise<boolean> {
-  const existing = await db
-    .selectFrom('channel_settings')
-    .select('disabled_at')
-    .where('channel_id', '=', channelId)
-    .executeTakeFirst()
-  const muting = !existing?.disabled_at // no row or null = currently on, so we're muting
-  await db
-    .insertInto('channel_settings')
-    .values({ channel_id: channelId, disabled_at: muting ? sql`now()` : null })
-    .onConflict((oc) =>
-      oc.column('channel_id').doUpdateSet({
-        disabled_at: muting ? sql`now()` : null,
-        updated_at: sql`now()`,
-      }),
-    )
-    .execute()
-  return muting
 }
