@@ -8,7 +8,7 @@ import {
   type Channel,
   type Client,
   type Guild,
-  type Message
+  type Message,
 } from 'discord.js'
 import { listEphemeralChannelIds } from '../repositories/channelSettings'
 import { deleteMessages, getLatestMessage, insertMessage } from '../repositories/messages'
@@ -30,42 +30,55 @@ export function splitForDiscord(text: string): string[] {
   return parts
 }
 
-// Post the pending tool calls as one subtext line ("-# Read 3 pages · Set 1 reminder"), tallying
-// repeats. Empties `names`; a name not matching one of `tools` is dropped.
-export async function postPendingTools(
-  channel: Channel,
-  tools: Tool<any>[],
-  names: string[],
-): Promise<void> {
+// Bring the "-# Read 3 pages · Set 1 reminder" breadcrumb for this tool phase up to date with `used`:
+// sent on the first tool, edited at most once a second after, stored and reset on `final`.
+export async function updateBreadcrumb({
+  channel,
+  tools,
+  used,
+  breadcrumb,
+  final = false,
+}: {
+  channel: Channel
+  tools: Tool<any>[]
+  used: Map<string, number>
+  breadcrumb: { message: Message; at: number } | null
+  final?: boolean
+}): Promise<{ message: Message; at: number } | null> {
+  if (used.size === 0 || !channel.isSendable()) return breadcrumb
   const labels = new Map(tools.map((t) => [t.definition.name, t.label]))
-  const counts = new Map<string, number>()
-  for (const name of names.splice(0)) {
-    if (labels.has(name)) counts.set(name, (counts.get(name) ?? 0) + 1)
+  const body = `-# ${used
+    .entries()
+    .map(([name, n]) => labels.get(name)!(n))
+    .toArray()
+    .join(' · ')}`
+  if (!breadcrumb) {
+    const message = await channel.send(body).catch(() => null)
+    if (message) breadcrumb = { message, at: Date.now() }
+  } else if (final || Date.now() - breadcrumb.at >= 1000) {
+    // edit message if its the last or if its been at least one second
+    breadcrumb.message.edit(body).catch(() => {})
+    breadcrumb.at = Date.now()
   }
-  if (counts.size === 0 || !channel.isSendable()) return
-  const body =
-    '-# ' +
-    counts
-      .entries()
-      .map(([name, n]) => labels.get(name)!(n))
-      .toArray()
-      .join(' · ')
-  const sent = await channel.send(body).catch(() => null)
-  if (!sent) return
-  await insertMessage({
-    channel_id: channel.id,
-    content: body,
-    user_id: channel.client.user!.id,
-    user_name: 'munin',
-    id: sent.id,
-    sent_at: sent.createdAt,
-    kind: 'tool'
-  })
+  if (!final) return breadcrumb
+  used.clear()
+  if (breadcrumb) {
+    await insertMessage({
+      channel_id: channel.id,
+      content: body,
+      user_id: channel.client.user!.id,
+      user_name: 'munin',
+      id: breadcrumb.message.id,
+      sent_at: breadcrumb.message.createdAt,
+      kind: 'tool',
+    })
+  }
+  return null
 }
 
 export async function fetchAllMessages(
   channel: Channel,
-  after?: string | null
+  after?: string | null,
 ): Promise<Message[]> {
   if (!channel.isTextBased()) return []
   const messages: Message[] = []
@@ -75,7 +88,7 @@ export async function fetchAllMessages(
     while (true) {
       const batch: Collection<string, Message> = await channel.messages.fetch({
         limit: 100,
-        after: cursor
+        after: cursor,
       })
       if (batch.size === 0) break
       batch.forEach((m) => messages.push(m))
@@ -89,7 +102,7 @@ export async function fetchAllMessages(
   while (true) {
     const batch: Collection<string, Message> = await channel.messages.fetch({
       limit: 100,
-      before
+      before,
     })
     if (batch.size === 0) break
     batch.forEach((m) => messages.push(m))
@@ -114,7 +127,6 @@ export async function sweepEphemeral(client: Client): Promise<void> {
   }
 }
 
-
 export async function dispatchReminders(client: Client): Promise<void> {
   const due = await getDueReminders()
   if (due.length === 0) return
@@ -135,13 +147,13 @@ export async function dispatchReminders(client: Client): Promise<void> {
       new ButtonBuilder()
         .setCustomId(`reminder_ack:${reminder.id}`)
         .setLabel('Got it')
-        .setStyle(ButtonStyle.Success)
+        .setStyle(ButtonStyle.Success),
     )
     try {
       const sent = await channel.send({
         content: reminder.target ? `<@${reminder.target}>` : undefined,
         embeds: [embed],
-        components: [row]
+        components: [row],
       })
       await insertMessage({
         channel_id: targetChannelId,
@@ -149,7 +161,7 @@ export async function dispatchReminders(client: Client): Promise<void> {
         user_id: client.user!.id,
         user_name: 'munin',
         id: sent.id,
-        sent_at: sent.createdAt
+        sent_at: sent.createdAt,
       })
       await markReminderSent(reminder.id)
       log.info({ reminderId: reminder.id }, 'Reminder delivered')
@@ -191,3 +203,15 @@ export async function getAllThreads(guild: Guild): Promise<AnyThreadChannel[]> {
 
   return [...byId.values()]
 }
+
+// export async function sweepMemory(client: Client, guild: Guild): Promise<void> {
+//   const allChannels = (await guild.channels.fetch())
+//     .values()
+//     .filter((c): c is TextChannel => c?.type === ChannelType.GuildText)
+//   const sweepChannels = [...allChannels].filter(async (c) => {
+//     if (!c) return false
+//     if (!c.messages.cache.values().some((m) => m.author.id === client.user?.id)) return false
+//     const latest = await getLatestMessage(c.id)
+//     if (!latest || Date.now() - latest.sent_at.getTime() < 5 * 60_000) return false
+//   })
+// }
