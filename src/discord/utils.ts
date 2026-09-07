@@ -13,7 +13,6 @@ import {
 import { listEphemeralChannelIds } from '../repositories/channelSettings'
 import { deleteMessages, getLatestMessage, insertMessage } from '../repositories/messages'
 import { getDueReminders, markReminderSent } from '../repositories/reminders'
-import { getAppSettings } from '../repositories/appSettings'
 import type { Tool } from '../ai/makeTool'
 import { log } from '../logger'
 
@@ -120,12 +119,10 @@ export async function dispatchReminders(client: Client): Promise<void> {
   const due = await getDueReminders()
   if (due.length === 0) return
 
-  const { reminder_channel_id } = await getAppSettings()
-
   for (const reminder of due) {
-    const targetChannelId = reminder.channel_id ?? reminder_channel_id
+    const targetChannelId = reminder.channel_id
     if (!targetChannelId) {
-      log.warn({ reminderId: reminder.id }, 'Reminder has no channel and no default set')
+      log.warn({ reminderId: reminder.id }, 'Reminder has no channel')
       continue
     }
     const channel = await client.channels.fetch(targetChannelId).catch(() => null)

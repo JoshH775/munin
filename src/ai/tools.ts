@@ -10,7 +10,6 @@ import { updateMemory } from '../repositories/memory'
 import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
 import { log } from '../logger'
 import { insertNewReminder, deleteReminder, getPendingReminders } from '../repositories/reminders'
-import { getAppSettings } from '../repositories/appSettings'
 import { getAllThreads } from '../discord/utils'
 import { searchMessages } from '../repositories/messages'
 
@@ -369,37 +368,28 @@ export function createReminderTool(client: Client, setById: string) {
     description:
       'Schedule a one-off reminder to post at a future time. Give the time as a UTC ISO 8601 ' +
       'datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is in your context, ' +
-      'so work forward from that. It fires within about a minute of the given time. Pass channelId ' +
-      'to post it in a specific channel or thread (use channel_tree for ids); omit it to use the default ' +
-      "reminder channel. Returns the reminder's id, which delete_reminder needs to cancel it.",
+      'so work forward from that. It fires within about a minute of the given time. Pass the channel ' +
+      'to post it in: the current channel id is in your context, or target a dedicated reminders channel ' +
+      "you find via channel_tree or recall from your memory. Returns the reminder's id, which delete_reminder needs to cancel it.",
     inputSchema: z.object({
       date: z.iso.datetime().describe('When to fire, as a UTC ISO 8601 datetime ending in Z.'),
       content: z.string().max(1800).describe('The reminder message to post.'),
-      channelId: z
-        .string()
-        .optional()
-        .describe('Channel to post in. Omit to use the default reminder channel.'),
+      channelId: z.string().describe('The channel or thread to post the reminder in.'),
     }),
     run: async ({ content, date, channelId }) => {
-      if (channelId) {
-        const channel = await client.channels.fetch(channelId).catch(() => null)
-        if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-          throw new Error(
-            'No text channel or thread with that id. Call channel_tree for the list of ids.',
-          )
-        }
-      } else if (!(await getAppSettings()).reminder_channel_id) {
+      const channel = await client.channels.fetch(channelId).catch(() => null)
+      if (!channel || !channel.isTextBased() || channel.isDMBased()) {
         throw new Error(
-          'No channelId given and no default reminder channel is set. Pass a channelId or ask the user to run /reminder-channel.',
+          'No text channel or thread with that id. Call channel_tree for the list of ids.',
         )
       }
       const { id } = await insertNewReminder({
         content,
         date,
-        channel_id: channelId ?? null,
+        channel_id: channelId,
         target: setById,
       })
-      return `Reminder set for ${date}${channelId ? ` in <#${channelId}>` : ''} (id ${id}).`
+      return `Reminder set for ${date} in <#${channelId}> (id ${id}).`
     },
   })
 }
