@@ -4,12 +4,11 @@ import { match } from 'ts-pattern'
 import { markReminderReceived, snoozeReminder } from '../repositories/reminders'
 import {
   handleConfigInteraction,
-  handleSettingsInteraction,
   handleMemoryInteraction,
   handleMuteInteraction,
+  handleUnmuteInteraction,
   handleEphemeralInteraction,
   handleClearInteraction,
-  handleReminderChannelInteraction,
 } from './commands'
 
 export async function interactionHandler(interaction: Interaction): Promise<void> {
@@ -50,12 +49,11 @@ export async function interactionHandler(interaction: Interaction): Promise<void
     try {
       await match(interaction.commandName)
         .with('config', () => handleConfigInteraction(interaction))
-        .with('settings', () => handleSettingsInteraction(interaction))
         .with('memory', () => handleMemoryInteraction(interaction))
         .with('mute', () => handleMuteInteraction(interaction))
+        .with('unmute', () => handleUnmuteInteraction(interaction))
         .with('ephemeral', () => handleEphemeralInteraction(interaction))
         .with('clear', () => handleClearInteraction(interaction))
-        .with('reminder-channel', () => handleReminderChannelInteraction(interaction))
         .otherwise(async () => {})
     } catch (err) {
       log.error({ err, command: interaction.commandName }, 'Interaction failed')

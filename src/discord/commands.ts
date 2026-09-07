@@ -7,57 +7,39 @@ import {
 } from 'discord.js'
 import { efforts, listModelIds, type Effort } from '../ai'
 import { resolveMemory } from '../repositories/memory'
-import {
-  resolveSettings,
-  toggleChannelMute,
-  toggleEphemeral,
-  updateConfig,
-} from '../repositories/channelSettings'
+import { resolveSettings, setMuted, toggleEphemeral } from '../repositories/channelSettings'
 import { deleteMessages } from '../repositories/messages'
-import { setReminderChannel } from '../repositories/appSettings'
+import { getAppSettings, updateAppSettings } from '../repositories/appSettings'
 import { log } from '../logger'
 
-const DEFAULT = '__default__' // choice value meaning "clear the override"
-
-// discord caps choices at 25; leave room for the Default entry.
-const modelIds = (await listModelIds()).slice(0, 24)
+// discord caps choices at 25.
+const modelIds = (await listModelIds()).slice(0, 25)
 
 const config = new SlashCommandBuilder()
   .setName('config')
-  .setDescription("Change this channel's model or effort")
+  .setDescription('View or set the app-wide model and effort')
   .addStringOption((o) =>
     o
       .setName('model')
-      .setDescription('Model (Default clears the override)')
-      .addChoices(
-        { name: 'Default', value: DEFAULT },
-        ...modelIds.map((id) => ({ name: id, value: id })),
-      ),
+      .setDescription('Set the app-wide chat model')
+      .addChoices(...modelIds.map((id) => ({ name: id, value: id }))),
   )
   .addStringOption((o) =>
     o
       .setName('effort')
-      .setDescription('Effort (Default clears the override)')
-      .addChoices(
-        { name: 'Default', value: DEFAULT },
-        ...efforts.map((e) => ({ name: e, value: e })),
-      ),
+      .setDescription('Set the app-wide effort')
+      .addChoices(...efforts.map((e) => ({ name: e, value: e }))),
   )
-
-const settings = new SlashCommandBuilder()
-  .setName('settings')
-  .setDescription("View this channel's settings")
 
 const memory = new SlashCommandBuilder()
   .setName('memory')
   .setDescription("View this channel's memory")
 
-const mute = new SlashCommandBuilder()
-  .setName('mute')
-  .setDescription('Mute or unmute munin in this channel')
-  .addBooleanOption((b) =>
-    b.setName('everywhere').setDescription('Apply across every channel, not just this one'),
-  )
+const mute = new SlashCommandBuilder().setName('mute').setDescription('Mute munin in this channel')
+
+const unmute = new SlashCommandBuilder()
+  .setName('unmute')
+  .setDescription('Unmute munin in this channel')
 
 const ephemeral = new SlashCommandBuilder()
   .setName('ephemeral')
@@ -77,59 +59,50 @@ const clear = new SlashCommandBuilder()
       .setMaxValue(100),
   )
 
-const reminderChannel = new SlashCommandBuilder()
-  .setName('reminder-channel')
-  .setDescription('Make this channel the default channel for reminders')
-
-const commands = [config, settings, memory, mute, ephemeral, clear, reminderChannel]
+const commands = [config, memory, mute, unmute, ephemeral, clear]
 
 export async function handleConfigInteraction(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   const model = interaction.options.getString('model')
   const effort = interaction.options.getString('effort')
+
+  // No options → view the app defaults plus this channel's state.
   if (model === null && effort === null) {
-    await interaction.reply({
-      content: 'Pass a model or effort to change. Use `/settings` to view this channel.',
-      flags: MessageFlags.Ephemeral,
-    })
+    const parentChannelId = interaction.channel?.isThread() ? interaction.channel.parentId : null
+    const [app, s] = await Promise.all([
+      getAppSettings(),
+      resolveSettings(interaction.channelId, parentChannelId),
+    ])
+    const embed = new EmbedBuilder()
+      .setTitle('Settings')
+      .setColor(0x1e2547)
+      .addFields(
+        { name: 'Model', value: `\`${app.chat_model}\``, inline: true },
+        { name: 'Effort', value: `\`${app.effort}\``, inline: true },
+        { name: 'Replies here', value: s.enabled ? 'On' : 'Muted', inline: true },
+        { name: 'Ephemeral', value: s.ephemeral ? 'Yes' : 'No', inline: true },
+      )
+    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
     return
   }
 
-  const patch: { model?: string | null; effort?: Effort | null } = {}
+  const patch: { chat_model?: string; effort?: Effort } = {}
   const changes: string[] = []
   if (model !== null) {
-    patch.model = model === DEFAULT ? null : model
-    changes.push(`model → ${model === DEFAULT ? 'default' : `\`${model}\``}`)
+    patch.chat_model = model
+    changes.push(`model → \`${model}\``)
   }
   if (effort !== null) {
-    patch.effort = effort === DEFAULT ? null : (effort as Effort)
-    changes.push(`effort → ${effort === DEFAULT ? 'default' : `\`${effort}\``}`)
+    patch.effort = effort as Effort
+    changes.push(`effort → \`${effort}\``)
   }
 
-  await updateConfig({ channelId: interaction.channelId, ...patch })
+  await updateAppSettings(patch)
   await interaction.reply({
     content: `Updated ${changes.join(', ')}.`,
     flags: MessageFlags.Ephemeral,
   })
-}
-
-export async function handleSettingsInteraction(
-  interaction: ChatInputCommandInteraction,
-): Promise<void> {
-  const parentChannelId = interaction.channel?.isThread() ? interaction.channel.parentId : null
-  const s = await resolveSettings(interaction.channelId, parentChannelId)
-  const embed = new EmbedBuilder()
-    .setTitle('Channel settings')
-    .setDescription(`<#${interaction.channelId}>`)
-    .setColor(0x1e2547)
-    .addFields(
-      { name: 'Model', value: `\`${s.model}\``, inline: true },
-      { name: 'Effort', value: `\`${s.effort}\``, inline: true },
-      { name: 'Replies', value: s.enabled ? 'On' : 'Muted', inline: true },
-      { name: 'Ephemeral', value: s.ephemeral ? 'Yes' : 'No', inline: true },
-    )
-  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
 }
 
 export async function handleMemoryInteraction(
@@ -147,13 +120,19 @@ export async function handleMemoryInteraction(
 }
 
 export async function handleMuteInteraction(interaction: ChatInputCommandInteraction) {
-  const everywhere = interaction.options.getBoolean('everywhere')
-  const channelId = everywhere ? 'global' : interaction.channelId
-  const muted = await toggleChannelMute(channelId)
-  const scope = everywhere ? 'everywhere' : 'in this channel'
-  log.info({ channelId, muted }, `Munin ${muted ? 'muted' : 'unmuted'} ${scope}`)
+  await setMuted(interaction.channelId, true)
+  log.info({ channelId: interaction.channelId }, 'Munin muted in channel')
   await interaction.reply({
-    content: `Munin ${muted ? 'muted' : 'unmuted'} ${scope}`,
+    content: 'Munin muted in this channel.',
+    flags: MessageFlags.Ephemeral,
+  })
+}
+
+export async function handleUnmuteInteraction(interaction: ChatInputCommandInteraction) {
+  await setMuted(interaction.channelId, false)
+  log.info({ channelId: interaction.channelId }, 'Munin unmuted in channel')
+  await interaction.reply({
+    content: 'Munin unmuted in this channel.',
     flags: MessageFlags.Ephemeral,
   })
 }
@@ -193,25 +172,6 @@ export async function handleClearInteraction(
     content:
       `Deleted ${deleted.size} message${deleted.size === 1 ? '' : 's'}.` +
       (deleted.size < count ? " (Messages older than 14 days can't be bulk-deleted.)" : ''),
-    flags: MessageFlags.Ephemeral,
-  })
-}
-
-export async function handleReminderChannelInteraction(
-  interaction: ChatInputCommandInteraction,
-): Promise<void> {
-  const channel = interaction.channel
-  if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-    await interaction.reply({
-      content: 'Pick a server text channel.',
-      flags: MessageFlags.Ephemeral,
-    })
-    return
-  }
-  await setReminderChannel(interaction.channelId)
-  log.info({ channelId: interaction.channelId }, 'Reminder channel set')
-  await interaction.reply({
-    content: `Reminders will default to <#${interaction.channelId}>.`,
     flags: MessageFlags.Ephemeral,
   })
 }
