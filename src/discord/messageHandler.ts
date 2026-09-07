@@ -11,7 +11,7 @@ import {
   listRemindersTool,
   deleteCategoryTool,
   setChannelCategoryTool,
-  createCategoryTool,
+  createChannelTool,
   channelTreeTool,
   renameCategoryTool,
   searchMessagesTool,
@@ -90,7 +90,7 @@ export async function messageHandler(
       editMessageTool(client),
       setChannelCategoryTool(client),
       ...(message.guild
-        ? [createCategoryTool(client, message.guild), channelTreeTool(client, message.guild)]
+        ? [createChannelTool(message.guild), channelTreeTool(client, message.guild)]
         : []),
     ]
     const systemSuffix = [

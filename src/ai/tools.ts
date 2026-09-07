@@ -224,7 +224,7 @@ export function channelTreeTool(client: Client, guild: Guild) {
     name: 'channel_tree',
     label: () => 'Looked at the channels',
     description:
-      "Show the server's channels grouped by category, each channel and category with its id, and any threads nested under their channel. Reach for it to see what exists and grab the ids you need before linking a channel or thread with `<#id>`, creating or deleting a category, or moving a channel.",
+      "Show the server's channels grouped by category, each channel and category with its id, and any threads nested under their channel. Reach for it to see what exists and grab the ids you need before linking a channel or thread with `<#id>`, creating a channel or category, deleting a category, or moving a channel.",
     inputSchema: z.object({}),
     run: async () => {
       const threads = await getAllThreads(guild)
