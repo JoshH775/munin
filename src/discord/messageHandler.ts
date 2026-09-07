@@ -25,7 +25,7 @@ import { getAppSettings } from '../repositories/appSettings'
 import { insertMessage, getConversation, toChatTranscript } from '../repositories/messages'
 import { insertUsage } from '../repositories/usage'
 import { findUrls } from '../urls'
-import { postPendingTools, splitForDiscord } from './utils'
+import { updateBreadcrumb, splitForDiscord } from './utils'
 import { log } from '../logger'
 
 const persona = readFileSync(
@@ -100,9 +100,9 @@ export async function messageHandler(
     ]
       .filter(Boolean)
       .join('\n\n')
-    // Tool calls buffer here and post as one line before munin next speaks and at turn end.
-    const pendingTools: string[] = []
-    let lastToolName: string | null = null
+    // Tools used this phase and the running "-# …" breadcrumb showing them.
+    const used = new Map<string, number>()
+    let breadcrumb: { message: Message; at: number } | null = null
     const turnStart = Date.now()
 
     let typing: ReturnType<typeof setInterval> | null = null
@@ -123,7 +123,13 @@ export async function messageHandler(
       },
       onText: async (text) => {
         stopTyping()
-        await postPendingTools(message.channel, tools, pendingTools)
+        breadcrumb = await updateBreadcrumb({
+          channel: message.channel,
+          tools,
+          used,
+          breadcrumb,
+          final: true,
+        })
         const tidy = text
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
           .trim()
@@ -145,16 +151,18 @@ export async function messageHandler(
         }
       },
       onToolUse: async (tool) => {
-        if (tool.name !== lastToolName) {
-          lastToolName = tool.name
-          await postPendingTools(message.channel, tools, pendingTools)
-        }
-        pendingTools.push(tool.name)
-        
+        used.set(tool.name, (used.get(tool.name) ?? 0) + 1)
+        breadcrumb = await updateBreadcrumb({ channel: message.channel, tools, used, breadcrumb })
       },
       tools,
     }).finally(stopTyping)
-    await postPendingTools(message.channel, tools, pendingTools)
+    breadcrumb = await updateBreadcrumb({
+      channel: message.channel,
+      tools,
+      used,
+      breadcrumb,
+      final: true,
+    })
 
     await insertUsage({
       in_reply_to: message.id,
