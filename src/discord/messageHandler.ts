@@ -21,6 +21,7 @@ import {
 } from '../ai/tools'
 import { resolveSettings } from '../repositories/channelSettings'
 import { resolveMemory } from '../repositories/memory'
+import { getAppSettings } from '../repositories/appSettings'
 import { insertMessage, getConversation, toChatTranscript } from '../repositories/messages'
 import { insertUsage } from '../repositories/usage'
 import { findUrls } from '../urls'
@@ -55,10 +56,11 @@ export async function messageHandler(
       sent_at: message.createdAt,
     })
 
-    const [history, settings, memory] = await Promise.all([
+    const [history, settings, memory, app] = await Promise.all([
       getConversation({ channelId }),
       resolveSettings(channelId, parentChannelId),
       resolveMemory(channelId, parentChannelId),
+      getAppSettings(),
     ])
 
     if (!settings.enabled) {
@@ -93,7 +95,7 @@ export async function messageHandler(
     ]
     const systemSuffix = [
       `The current date and time is ${message.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
-      `You are in ${channelName}.`,
+      `You are in ${channelName} (id ${channelId}).`,
       memory.trim() && `<memory>\n${memory}\n</memory>`,
     ]
       .filter(Boolean)
@@ -110,8 +112,8 @@ export async function messageHandler(
     }
     const { usage, truncated, rounds } = await turn({
       messages: transcript,
-      model: settings.model,
-      effort: settings.effort,
+      model: app.chat_model,
+      effort: app.effort,
       system: persona,
       systemSuffix,
       onRoundStart: () => {
@@ -156,8 +158,8 @@ export async function messageHandler(
 
     await insertUsage({
       in_reply_to: message.id,
-      effort: settings.effort,
-      model: settings.model,
+      effort: app.effort,
+      model: app.chat_model,
       ...usage,
     })
 
@@ -178,8 +180,8 @@ export async function messageHandler(
     log.info(
       {
         channelId,
-        model: settings.model,
-        effort: settings.effort,
+        model: app.chat_model,
+        effort: app.effort,
         rounds,
         ms: Date.now() - turnStart,
         tokens: {
