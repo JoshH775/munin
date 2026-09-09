@@ -31,8 +31,6 @@ export function splitForDiscord(text: string): string[] {
   return parts
 }
 
-// Bring the "-# Read 3 pages · Set 1 reminder" breadcrumb for this tool phase up to date with `used`:
-// sent on the first tool, edited at most once a second after, stored and reset on `final`.
 export async function postToolBreadcrumb({
   channel,
   tools,
