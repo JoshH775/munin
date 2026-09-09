@@ -19,6 +19,7 @@ import {
   postMessageTool,
   editMessageTool,
 } from '../ai/tools'
+import { platesTools } from '../ai/plates'
 import { resolveSettings } from '../repositories/channelSettings'
 import { resolveMemory } from '../repositories/memory'
 import { getAppSettings } from '../repositories/appSettings'
@@ -40,11 +41,9 @@ export async function messageHandler(
 ): Promise<void> {
   if (message.author.id === client.user?.id) return
   if (message.system) return // ignore discord system notices (thread created, pins, joins, …)
+  if (!message.inGuild()) return // no DM intent, so this only narrows the type
   const channelId = message.channelId
   const parentChannelId = message.channel.isThread() ? message.channel.parentId : null
-  const channelName = message.channel.isThread()
-    ? `#${message.channel.parent?.name ?? 'unknown'} (thread: ${message.channel.name})`
-    : `#${'name' in message.channel ? message.channel.name : channelId}`
   try {
     log.info({ channelId, parentChannelId, user: message.author.username }, 'Message received')
 
@@ -90,13 +89,17 @@ export async function messageHandler(
       postMessageTool(client),
       editMessageTool(client),
       setChannelCategoryTool(client),
-      ...(message.guild
-        ? [createChannelTool(message.guild), channelTreeTool(client, message.guild)]
-        : []),
+      ...platesTools(),
+      createChannelTool(message.guild),
+      channelTreeTool(client, message.guild),
     ]
     const systemSuffix = [
       `The current date and time is ${dayjs(message.createdAt).tz().format('dddd D MMMM YYYY HH:mm')}, London time.`,
-      `You are in ${channelName} (id ${channelId}).`,
+      message.channel.isThread()
+        ? `You are in ${message.channel.name} (thread of #${message.channel.parent?.name ?? 'unknown'}) (id ${channelId}).`
+        : `You are in #${message.channel.name} (id ${channelId}).`,
+      settings.ephemeral &&
+        'This channel is ephemeral: it clears itself a few minutes after the last message and nothing said here is remembered.',
       memory.trim() && `<memory>\n${memory}\n</memory>`,
     ]
       .filter(Boolean)
