@@ -27,7 +27,7 @@ import { insertMessage, getConversation, toChatTranscript } from '../repositorie
 import { insertUsage } from '../repositories/usage'
 import { findUrls } from '../urls'
 import { dayjs } from '../time'
-import { updateBreadcrumb, splitForDiscord } from './utils'
+import { splitForDiscord, postToolBreadcrumb } from './utils'
 import { log } from '../logger'
 
 const persona = readFileSync(
@@ -127,13 +127,7 @@ export async function messageHandler(
       },
       onText: async (text) => {
         stopTyping()
-        breadcrumb = await updateBreadcrumb({
-          channel: message.channel,
-          tools,
-          used,
-          breadcrumb,
-          final: true,
-        })
+        await postToolBreadcrumb({ channel: message.channel, tools, used })
         const tidy = text
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
           .trim()
@@ -156,17 +150,10 @@ export async function messageHandler(
       },
       onToolUse: async (tool) => {
         used.set(tool.name, (used.get(tool.name) ?? 0) + 1)
-        breadcrumb = await updateBreadcrumb({ channel: message.channel, tools, used, breadcrumb })
       },
       tools,
     }).finally(stopTyping)
-    breadcrumb = await updateBreadcrumb({
-      channel: message.channel,
-      tools,
-      used,
-      breadcrumb,
-      final: true,
-    })
+    await postToolBreadcrumb({ channel: message.channel, tools, used })
 
     await insertUsage({
       in_reply_to: message.id,

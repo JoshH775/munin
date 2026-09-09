@@ -33,48 +33,37 @@ export function splitForDiscord(text: string): string[] {
 
 // Bring the "-# Read 3 pages · Set 1 reminder" breadcrumb for this tool phase up to date with `used`:
 // sent on the first tool, edited at most once a second after, stored and reset on `final`.
-export async function updateBreadcrumb({
+export async function postToolBreadcrumb({
   channel,
   tools,
   used,
-  breadcrumb,
-  final = false,
 }: {
   channel: Channel
   tools: Tool<any>[]
   used: Map<string, number>
-  breadcrumb: { message: Message; at: number } | null
-  final?: boolean
-}): Promise<{ message: Message; at: number } | null> {
-  if (used.size === 0 || !channel.isSendable()) return breadcrumb
-  const labels = new Map(tools.map((t) => [t.definition.name, t.label]))
+}): Promise<void> {
+  if (used.size === 0 || !channel.isSendable()) return
+  const labelsMap = new Map(tools.map((t) => [t.definition.name, t.label]))
   const body = `-# ${used
     .entries()
-    .map(([name, n]) => labels.get(name)!(n))
+    .map(([name, count]) => {
+      const labelFn = labelsMap.get(name)
+      if (!labelFn) throw new Error(`Tool used but not in tools list: ${name}`)
+      return labelFn(count)
+    })
     .toArray()
     .join(' · ')}`
-  if (!breadcrumb) {
-    const message = await channel.send(body).catch(() => null)
-    if (message) breadcrumb = { message, at: Date.now() }
-  } else if (final || Date.now() - breadcrumb.at >= 1000) {
-    // edit message if its the last or if its been at least one second
-    breadcrumb.message.edit(body).catch(() => {})
-    breadcrumb.at = Date.now()
-  }
-  if (!final) return breadcrumb
-  used.clear()
-  if (breadcrumb) {
+  const message = await channel.send(body).catch(() => {})
+  if (message) {
     await insertMessage({
       channel_id: channel.id,
       content: body,
       user_id: channel.client.user!.id,
       user_name: 'munin',
-      id: breadcrumb.message.id,
-      sent_at: dayjs(breadcrumb.message.createdAt),
-      kind: 'tool',
+      id: message.id,
+      sent_at: dayjs(message.createdAt),
     })
   }
-  return null
 }
 
 export async function fetchAllMessages(
