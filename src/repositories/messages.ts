@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import type { Insertable, Selectable } from 'kysely'
+import type { Dayjs } from 'dayjs'
 import { db } from '../db/index'
 import type { Messages } from '../db/types'
 
@@ -23,7 +24,7 @@ export async function deleteChannelMessages(channelId: string): Promise<void> {
 
 export async function getLatestMessage(
   channelId: string,
-): Promise<{ id: string; sent_at: Date } | null> {
+): Promise<{ id: string; sent_at: Dayjs } | null> {
   const row = await db
     .selectFrom('messages')
     .select(['id', 'sent_at'])
@@ -52,7 +53,7 @@ export async function getMessagesSince({
   since,
 }: {
   channelId: string
-  since: Date
+  since: Dayjs
 }): Promise<Selectable<Messages>[]> {
   return db
     .selectFrom('messages')
@@ -91,14 +92,14 @@ export function toChatTranscript(
 
 export async function searchMessages(opts: {
   channelId?: string
-  since?: string
+  since?: Dayjs
   query?: string
   limit?: number
 }): Promise<Selectable<Messages>[]> {
   const { channelId, since, query, limit } = opts
   let q = db.selectFrom('messages').selectAll()
   if (channelId) q = q.where('channel_id', '=', channelId)
-  if (since) q = q.where('sent_at', '>=', new Date(since))
+  if (since) q = q.where('sent_at', '>=', since)
   if (query) q = q.where('content', 'ilike', `%${query}%`)
   if (limit) q = q.limit(limit)
   return q.orderBy('sent_at', 'desc').execute()

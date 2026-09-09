@@ -15,6 +15,7 @@ import { deleteMessages, getLatestMessage, insertMessage } from '../repositories
 import { getDueReminders, markReminderSent } from '../repositories/reminders'
 import type { Tool } from '../ai/makeTool'
 import { log } from '../logger'
+import { dayjs } from '../time'
 
 // Chunk text to fit Discord's 2000-char message limit, breaking on newlines where possible.
 export function splitForDiscord(text: string): string[] {
@@ -69,7 +70,7 @@ export async function updateBreadcrumb({
       user_id: channel.client.user!.id,
       user_name: 'munin',
       id: breadcrumb.message.id,
-      sent_at: breadcrumb.message.createdAt,
+      sent_at: dayjs(breadcrumb.message.createdAt),
       kind: 'tool',
     })
   }
@@ -116,7 +117,7 @@ export async function sweepEphemeral(client: Client): Promise<void> {
   for (const channelId of await listEphemeralChannelIds()) {
     const last = await getLatestMessage(channelId)
     if (!last) continue
-    if (Date.now() - last.sent_at.getTime() < 10 * 60_000) continue
+    if (dayjs().diff(last.sent_at) < 10 * 60_000) continue
     const channel = await client.channels.fetch(channelId).catch(() => null)
     if (!channel || !channel.isTextBased() || channel.isDMBased()) continue
     const deleted = await channel.bulkDelete(100, true)
@@ -169,7 +170,7 @@ export async function dispatchReminders(client: Client): Promise<void> {
         user_id: client.user!.id,
         user_name: 'munin',
         id: sent.id,
-        sent_at: sent.createdAt,
+        sent_at: dayjs(sent.createdAt),
       })
       await markReminderSent(reminder.id)
       log.info({ reminderId: reminder.id }, 'Reminder delivered')
@@ -220,6 +221,6 @@ export async function getAllThreads(guild: Guild): Promise<AnyThreadChannel[]> {
 //     if (!c) return false
 //     if (!c.messages.cache.values().some((m) => m.author.id === client.user?.id)) return false
 //     const latest = await getLatestMessage(c.id)
-//     if (!latest || Date.now() - latest.sent_at.getTime() < 5 * 60_000) return false
+//     if (!latest || dayjs().diff(latest.sent_at) < 5 * 60_000) return false
 //   })
 // }

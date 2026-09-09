@@ -25,6 +25,7 @@ import { getAppSettings } from '../repositories/appSettings'
 import { insertMessage, getConversation, toChatTranscript } from '../repositories/messages'
 import { insertUsage } from '../repositories/usage'
 import { findUrls } from '../urls'
+import { dayjs } from '../time'
 import { updateBreadcrumb, splitForDiscord } from './utils'
 import { log } from '../logger'
 
@@ -53,7 +54,7 @@ export async function messageHandler(
       user_id: message.author.id,
       user_name: message.author.username,
       id: message.id,
-      sent_at: message.createdAt,
+      sent_at: dayjs(message.createdAt),
     })
 
     const [history, settings, memory, app] = await Promise.all([
@@ -94,7 +95,7 @@ export async function messageHandler(
         : []),
     ]
     const systemSuffix = [
-      `The current date and time is ${message.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
+      `The current date and time is ${dayjs(message.createdAt).tz().format('dddd D MMMM YYYY HH:mm')}, London time.`,
       `You are in ${channelName} (id ${channelId}).`,
       memory.trim() && `<memory>\n${memory}\n</memory>`,
     ]
@@ -146,7 +147,7 @@ export async function messageHandler(
             user_id: client.user!.id,
             user_name: 'munin',
             id: sent.id,
-            sent_at: sent.createdAt,
+            sent_at: dayjs(sent.createdAt),
           })
         }
       },

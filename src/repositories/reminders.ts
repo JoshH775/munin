@@ -1,6 +1,7 @@
 import type { Insertable, Selectable } from 'kysely'
 import type { Reminders } from '../db/types'
 import { db } from '../db'
+import { dayjs } from '../time'
 
 export async function insertNewReminder(reminder: Insertable<Reminders>): Promise<{ id: string }> {
   return db.insertInto('reminders').values(reminder).returning('id').executeTakeFirstOrThrow()
@@ -12,7 +13,7 @@ export async function getDueReminders(): Promise<Selectable<Reminders>[]> {
     .selectFrom('reminders')
     .selectAll()
     .where('status', '=', 'pending')
-    .where('date', '<=', new Date())
+    .where('date', '<=', dayjs())
     .execute()
 }
 
@@ -35,10 +36,9 @@ export async function markReminderReceived(id: string): Promise<void> {
 }
 
 export async function snoozeReminder(id: string, minutes: number): Promise<void> {
-  const date = new Date(Date.now() + (minutes * 60 * 1000))
   await db
     .updateTable('reminders')
-    .set({ date, status: 'pending' })
+    .set({ date: dayjs().add(minutes, 'minute'), status: 'pending' })
     .where('id', '=', id)
     .execute()
 }

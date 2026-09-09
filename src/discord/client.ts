@@ -6,16 +6,10 @@ import {
   insertMessage,
 } from '../repositories/messages'
 import { deleteSettings } from '../repositories/channelSettings'
-import {
-  fetchAllMessages,
-  getAllThreads,
-  sweepEphemeral,
-  dispatchReminders,
-} from './utils'
+import { fetchAllMessages, getAllThreads, sweepEphemeral, dispatchReminders } from './utils'
 import { log } from '../logger'
-import {
-  registerCommands,
-} from './commands'
+import { dayjs } from '../time'
+import { registerCommands } from './commands'
 import { Cron } from 'croner'
 import { interactionHandler } from './interactionHandler'
 import { messageHandler } from './messageHandler'
@@ -108,7 +102,7 @@ async function backfill(): Promise<void> {
             user_name: message.author.username,
             user_id: message.author.id,
             id: message.id,
-            sent_at: message.createdAt,
+            sent_at: dayjs(message.createdAt),
           }),
         )
       }
@@ -128,7 +122,7 @@ async function backfill(): Promise<void> {
             user_name: message.author.username,
             user_id: message.author.id,
             id: message.id,
-            sent_at: message.createdAt,
+            sent_at: dayjs(message.createdAt),
           }),
         )
       }

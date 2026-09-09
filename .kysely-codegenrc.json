@@ -1,0 +1,3 @@
+{
+  "typeMapping": { "timestamptz": "import('dayjs').Dayjs" }
+}

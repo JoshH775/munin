@@ -21,3 +21,4 @@ Debugging prod data: its Postgres is on `localhost:20132` (database and user bot
 
 - tsx runs everything; imports are extensionless (bundler resolution), so plain `node` cannot run this code.
 - Chat model and effort are app-wide, in the `app_settings` row (GLM-5.2 on DeepInfra, high effort), set via `/config`; scheduled jobs stay on Sonnet regardless.
+- Times are Dayjs end to end, never `Date` or bare strings. `src/time.ts` names the zone (Europe/London) and parses model-supplied times; `src/db/index.ts` makes pg return `timestamptz` as Dayjs, serialises Dayjs on the way in, and refuses to boot if that parser is missing; kysely-codegen types those columns as Dayjs through the one-line `typeMapping` in `.kysely-codegenrc.json`, using an inline `import('dayjs').Dayjs` so no import has to be generated.

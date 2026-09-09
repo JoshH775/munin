@@ -5,6 +5,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { turn, type Effort } from '../src/ai/index'
 import { makeTool, type Tool } from '../src/ai/makeTool'
+import { dayjs } from '../src/time'
 
 const [model, inArg, outArg] = process.argv.slice(2)
 const inCost = Number(inArg)
@@ -203,7 +204,7 @@ const fmtCost = (n: number): string => `$${n.toFixed(4)}`
 
 log(`\n# ${model}`)
 log(
-  `\n_${new Date().toISOString()} · effort ${effort} · in ${fmtCost(inCost)}/M · out ${fmtCost(outCost)}/M_`,
+  `\n_${dayjs().toISOString()} · effort ${effort} · in ${fmtCost(inCost)}/M · out ${fmtCost(outCost)}/M_`,
 )
 
 let totalIn = 0
@@ -213,7 +214,7 @@ let totalReplies = 0
 
 for (const scenario of SCENARIOS) {
   const systemSuffix = [
-    `The current date and time is ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
+    `The current date and time is ${dayjs().tz().format('dddd D MMMM YYYY HH:mm')}, London time.`,
     `You are in ${scenario.channel}.`,
     scenario.memory && `<memory>\n${scenario.memory}\n</memory>`,
   ]

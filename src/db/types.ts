@@ -13,10 +13,8 @@ export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
 
 export type Int8 = ColumnType<string, bigint | number | string, bigint | number | string>;
 
-export type Timestamp = ColumnType<Date, Date | string, Date | string>;
-
 export interface _Migrations {
-  applied_at: Generated<Timestamp>;
+  applied_at: Generated<import('dayjs').Dayjs>;
   name: string;
 }
 
@@ -28,27 +26,27 @@ export interface AppSettings {
 
 export interface ChannelSettings {
   channel_id: string;
-  created_at: Generated<Timestamp>;
+  created_at: Generated<import('dayjs').Dayjs>;
   ephemeral: Generated<boolean>;
   muted: Generated<boolean>;
-  updated_at: Generated<Timestamp>;
+  updated_at: Generated<import('dayjs').Dayjs>;
 }
 
 export interface Memory {
-  as_of: Timestamp;
+  as_of: import('dayjs').Dayjs;
   channel_id: string;
   content: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Generated<import('dayjs').Dayjs>;
+  updated_at: Generated<import('dayjs').Dayjs>;
 }
 
 export interface Messages {
   channel_id: string;
   content: string;
-  created_at: Generated<Timestamp>;
+  created_at: Generated<import('dayjs').Dayjs>;
   id: string;
   kind: Generated<string>;
-  sent_at: Timestamp;
+  sent_at: import('dayjs').Dayjs;
   user_id: string;
   user_name: string;
 }
@@ -56,8 +54,8 @@ export interface Messages {
 export interface Reminders {
   channel_id: string | null;
   content: string;
-  created_at: Generated<Timestamp>;
-  date: Timestamp;
+  created_at: Generated<import('dayjs').Dayjs>;
+  date: import('dayjs').Dayjs;
   id: Generated<string>;
   received: Generated<boolean>;
   status: Generated<string>;
@@ -67,7 +65,7 @@ export interface Reminders {
 export interface Usage {
   cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
-  created_at: Generated<Timestamp>;
+  created_at: Generated<import('dayjs').Dayjs>;
   effort: string;
   id: Generated<Int8>;
   in_reply_to: string | null;

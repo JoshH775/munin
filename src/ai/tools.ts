@@ -12,6 +12,7 @@ import { log } from '../logger'
 import { insertNewReminder, deleteReminder, getPendingReminders } from '../repositories/reminders'
 import { getAllThreads } from '../discord/utils'
 import { searchMessages } from '../repositories/messages'
+import { parseTime } from '../time'
 
 // A friendly status phrase count, given how many times a tool ran this flush.
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -370,13 +371,15 @@ export function createReminderTool(client: Client, setById: string) {
     name: 'create_reminder',
     label: (n) => `Set ${plural(n, 'reminder')}`,
     description:
-      'Schedule a one-off reminder to post at a future time. Give the time as a UTC ISO 8601 ' +
-      'datetime ending in Z (e.g. 2026-09-01T14:30:00Z); the current time in UTC is in your context, ' +
-      'so work forward from that. It fires within about a minute of the given time. Pass the channel ' +
+      'Schedule a one-off reminder to post at a future time. Give the time as London local time in ' +
+      'ISO 8601 form with no zone suffix (e.g. 2026-09-01T14:30); the current London time is in your ' +
+      'context, so work forward from that. It fires within about a minute of the given time. Pass the channel ' +
       'to post it in: the current channel id is in your context, or target a dedicated reminders channel ' +
       "you find via channel_tree or recall from your memory. Returns the reminder's id, which delete_reminder needs to cancel it.",
     inputSchema: z.object({
-      date: z.iso.datetime().describe('When to fire, as a UTC ISO 8601 datetime ending in Z.'),
+      date: z.iso
+        .datetime({ local: true })
+        .describe('When to fire, as London local time in ISO 8601 form with no zone suffix.'),
       content: z.string().max(1800).describe('The reminder message to post.'),
       channelId: z.string().describe('The channel or thread to post the reminder in.'),
     }),
@@ -387,13 +390,14 @@ export function createReminderTool(client: Client, setById: string) {
           'No text channel or thread with that id. Call channel_tree for the list of ids.',
         )
       }
+      const when = parseTime(date)
       const { id } = await insertNewReminder({
         content,
-        date,
+        date: when,
         channel_id: channelId,
         target: setById,
       })
-      return `Reminder set for ${date} in <#${channelId}> (id ${id}).`
+      return `Reminder set for ${when.tz().format('dddd D MMMM HH:mm')} in <#${channelId}> (id ${id}).`
     },
   })
 }
@@ -429,7 +433,7 @@ export function listRemindersTool() {
       return reminders
         .map(
           (r) =>
-            `${r.id} — ${r.date.toISOString()} — ${r.channel_id ? `<#${r.channel_id}>` : 'default channel'} — ${r.content}`,
+            `${r.id} — ${r.date.tz().format('ddd D MMM YYYY HH:mm')} — ${r.channel_id ? `<#${r.channel_id}>` : 'default channel'} — ${r.content}`,
         )
         .join('\n')
     },
@@ -454,10 +458,10 @@ export function searchMessagesTool(client: Client) {
         .optional()
         .describe('Optional maximum number of results to return. Default is 50.'),
       since: z.iso
-        .datetime()
+        .datetime({ local: true })
         .optional()
         .describe(
-          'Optional ISO 8601 datetime to restrict the search to messages sent after this time.',
+          'Optional London local time (ISO 8601, no zone suffix) to restrict the search to messages sent after it.',
         ),
     }),
     run: async (args) => {
@@ -466,9 +470,16 @@ export function searchMessagesTool(client: Client) {
         query,
         channelId,
         limit,
-        since,
+        since: since ? parseTime(since) : undefined,
       })
-      return JSON.stringify(results.filter((m) => m.user_id !== client.user?.id))
+      return JSON.stringify(
+        results
+          .filter((m) => m.user_id !== client.user?.id)
+          .map(({ created_at, ...m }) => ({
+            ...m,
+            sent_at: m.sent_at.tz().format('YYYY-MM-DD HH:mm'),
+          })),
+      )
     },
   })
 }
