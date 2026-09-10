@@ -106,7 +106,6 @@ export async function messageHandler(
       .join('\n\n')
     // Tools used this phase and the running "-# …" breadcrumb showing them.
     const used = new Map<string, number>()
-    let breadcrumb: { message: Message; at: number } | null = null
     const turnStart = Date.now()
 
     let typing: ReturnType<typeof setInterval> | null = null

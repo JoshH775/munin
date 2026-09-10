@@ -7,8 +7,12 @@ import {
   type AnyThreadChannel,
   type Channel,
   type Client,
+  type ForumChannel,
   type Guild,
+  type MediaChannel,
   type Message,
+  type NewsChannel,
+  type TextChannel,
 } from 'discord.js'
 import { listEphemeralChannelIds } from '../repositories/channelSettings'
 import { deleteMessages, getLatestMessage, insertMessage } from '../repositories/messages'
@@ -173,29 +177,36 @@ export async function getAllThreads(guild: Guild): Promise<AnyThreadChannel[]> {
   const byId = new Map<string, AnyThreadChannel>()
   const add = (thread: AnyThreadChannel) => byId.set(thread.id, thread)
 
-  const active = await guild.channels.fetchActiveThreads()
-  active.threads.forEach(add)
+  const jobs = []
+  jobs.push(guild.channels.fetchActiveThreads().then((res) => res.threads.forEach(add)))
+
+  const fetchArchivedThreads = async (
+    type: 'public' | 'private',
+    channel: NewsChannel | TextChannel | ForumChannel | MediaChannel,
+  ) => {
+    let before: number | undefined
+    let hasMore = true
+    while (hasMore) {
+      const page = await channel.threads
+        .fetchArchived({ type, before, limit: 100, fetchAll: true })
+        .catch(() => null)
+      if (!page) break
+
+      page.threads.forEach(add)
+      const oldest = page.threads.last()
+      before = oldest?.archiveTimestamp ?? undefined
+      hasMore = page.hasMore && !!oldest
+    }
+  }
 
   const channels = await guild.channels.fetch()
   for (const channel of channels.values()) {
     if (!channel || !('threads' in channel)) continue
-
-    for (const type of ['public', 'private'] as const) {
-      let before: number | undefined
-      let hasMore = true
-      while (hasMore) {
-        const page = await channel.threads
-          .fetchArchived({ type, before, limit: 100, fetchAll: type === 'private' })
-          .catch(() => null)
-        if (!page) break
-
-        page.threads.forEach(add)
-        const oldest = page.threads.last()
-        before = oldest?.archiveTimestamp ?? undefined
-        hasMore = page.hasMore && !!oldest
-      }
-    }
+    jobs.push(fetchArchivedThreads('public', channel))
+    jobs.push(fetchArchivedThreads('private', channel))
   }
+
+  await Promise.all(jobs)
 
   return [...byId.values()]
 }

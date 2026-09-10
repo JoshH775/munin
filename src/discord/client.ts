@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
+import { Client, Events, GatewayIntentBits, Partials, type GuildTextBasedChannel } from 'discord.js'
 import {
   deleteChannelMessages,
   deleteMessages,
@@ -82,65 +82,38 @@ client.once(Events.ClientReady, async (c) => {
 async function backfill(): Promise<void> {
   log.info('Backfilling messages')
   const start = Date.now()
-  const inserts: Promise<void>[] = []
-  let channelCount = 0
-  let threadCount = 0
-  let guildCount = 0
-  for (const guild of client.guilds.cache.values()) {
-    const channels = await guild.channels.fetch()
+  const backfillJobs: Promise<void>[] = []
+  let messageCount = 0
 
-    for (const channel of channels.values().filter((c) => !!c)) {
-      const after = (await getLatestMessage(channel.id))?.id ?? null
-      const messages = await fetchAllMessages(channel, after)
-      if (messages.length === 0) continue
-      for (const message of messages) {
-        if (message.system) continue
-        inserts.push(
-          insertMessage({
-            channel_id: channel.id,
-            content: message.content,
-            user_name: message.author.username,
-            user_id: message.author.id,
-            id: message.id,
-            sent_at: dayjs(message.createdAt),
-          }),
-        )
-      }
-      channelCount++
+  const backfillChannel = async (channel: GuildTextBasedChannel) => {
+    const latest = await getLatestMessage(channel.id)
+    if (BigInt(channel.lastMessageId ?? 0) <= BigInt(latest?.id ?? 0)) return
+    const messages = await fetchAllMessages(channel, latest?.id ?? null)
+    if (messages.length === 0) return
+    for (const message of messages) {
+      if (message.system) continue
+      messageCount++
+      await insertMessage({
+        channel_id: channel.id,
+        content: message.content,
+        user_name: message.author.username,
+        user_id: message.author.id,
+        id: message.id,
+        sent_at: dayjs(message.createdAt),
+      })
     }
-
-    for (const thread of await getAllThreads(guild)) {
-      if (!thread.parentId) continue
-      const after = (await getLatestMessage(thread.id))?.id ?? null
-      const messages = await fetchAllMessages(thread, after)
-      for (const message of messages) {
-        if (message.system) continue
-        inserts.push(
-          insertMessage({
-            channel_id: thread.id,
-            content: message.content,
-            user_name: message.author.username,
-            user_id: message.author.id,
-            id: message.id,
-            sent_at: dayjs(message.createdAt),
-          }),
-        )
-      }
-      threadCount++
-    }
-
-    guildCount++
   }
 
-  await Promise.all(inserts)
-  log.info(
-    {
-      messages: inserts.length,
-      channels: channelCount,
-      threads: threadCount,
-      guilds: guildCount,
-      ms: Date.now() - start,
-    },
-    'Backfill complete',
-  )
+  for (const guild of client.guilds.cache.values()) {
+    const channels = [
+      ...(await guild.channels.fetch()).values().filter((c) => !!c && c.isTextBased()),
+      ...(await getAllThreads(guild)),
+    ]
+    for (const channel of channels) {
+      backfillJobs.push(backfillChannel(channel))
+    }
+  }
+
+  await Promise.all(backfillJobs)
+  log.info({ messages: messageCount, ms: Date.now() - start }, 'Backfill complete')
 }
