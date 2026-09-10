@@ -4,13 +4,15 @@ import type { Dayjs } from 'dayjs'
 import { db } from '../db/index'
 import type { Messages } from '../db/types'
 
-export async function insertMessage(message: Insertable<Messages>): Promise<void> {
-  if (!message.content.trim()) return // skip contentless messages (images, embeds, system events)
-  await db
+// Resolves true only when a row was actually written.
+export async function insertMessage(message: Insertable<Messages>): Promise<boolean> {
+  if (!message.content.trim()) return false // skip contentless messages (images, embeds, system events)
+  const result = await db
     .insertInto('messages')
     .values(message)
     .onConflict((oc) => oc.column('id').doNothing()) // idempotent on the snowflake id
-    .execute()
+    .executeTakeFirst()
+  return result.numInsertedOrUpdatedRows === 1n
 }
 
 export async function deleteMessages(ids: string[]): Promise<void> {

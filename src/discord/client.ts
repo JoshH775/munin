@@ -92,8 +92,7 @@ async function backfill(): Promise<void> {
     if (messages.length === 0) return
     for (const message of messages) {
       if (message.system) continue
-      messageCount++
-      await insertMessage({
+      const inserted = await insertMessage({
         channel_id: channel.id,
         content: message.content,
         user_name: message.author.username,
@@ -101,6 +100,7 @@ async function backfill(): Promise<void> {
         id: message.id,
         sent_at: dayjs(message.createdAt),
       })
+      if (inserted) messageCount++
     }
   }
 
