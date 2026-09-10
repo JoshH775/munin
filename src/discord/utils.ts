@@ -55,6 +55,7 @@ export async function postToolBreadcrumb({
     })
     .toArray()
     .join(' · ')}`
+  used.clear()
   const message = await channel.send(body).catch(() => {})
   if (message) {
     await insertMessage({
