@@ -2,7 +2,7 @@ import 'dotenv/config'
 import Anthropic from '@anthropic-ai/sdk'
 import { match } from 'ts-pattern'
 import type { Tool } from './makeTool'
-import { executeTool } from './executeTool'
+import { executeTool, type ToolOutcome } from './executeTool'
 import { log } from '../logger'
 
 function clientFor(model: string) {
@@ -33,7 +33,7 @@ export type TurnParams = {
   maxTokens?: number
   effort?: Effort
   onRoundStart?: () => void
-  onToolUse?: (tool: Anthropic.ToolUseBlock) => void | Promise<void>
+  onToolUse?: (tool: Anthropic.ToolUseBlock, outcome: ToolOutcome) => void | Promise<void>
   onText?: (text: string) => void | Promise<void>
   onThinking?: () => void
 }
@@ -122,8 +122,8 @@ export async function turn(params: TurnParams): Promise<{
           said += p.text
         })
         .with({ type: 'tool_use' }, async (p) => {
-          await onToolUse?.(p)
           const outcome = await executeTool(tools, p, tainted)
+          await onToolUse?.(p, outcome)
           results.push(outcome.result)
           tainted ||= outcome.tainted
         })
