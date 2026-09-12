@@ -13,6 +13,18 @@ export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
 
 export type Int8 = ColumnType<string, bigint | number | string, bigint | number | string>;
 
+export type Json = JsonValue;
+
+export type JsonArray = JsonValue[];
+
+export type JsonObject = {
+  [x: string]: JsonValue | undefined;
+};
+
+export type JsonPrimitive = boolean | number | string | null;
+
+export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
+
 export interface _Migrations {
   applied_at: Generated<import('dayjs').Dayjs>;
   name: string;
@@ -62,6 +74,18 @@ export interface Reminders {
   target: string | null;
 }
 
+export interface ToolLog {
+  channel_id: string;
+  created_at: Generated<import('dayjs').Dayjs>;
+  duration_ms: number;
+  error: string | null;
+  id: Generated<Int8>;
+  in_reply_to: string | null;
+  input: Json;
+  output: string | null;
+  tool: string;
+}
+
 export interface Usage {
   cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
@@ -81,5 +105,6 @@ export interface DB {
   memory: Memory;
   messages: Messages;
   reminders: Reminders;
+  tool_log: ToolLog;
   usage: Usage;
 }
