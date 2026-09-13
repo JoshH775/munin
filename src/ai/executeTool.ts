@@ -4,10 +4,10 @@ import { log } from '../logger'
 import { dayjs } from '../time'
 
 export type ToolOutcome = {
-  result: Anthropic.ToolResultBlockParam
+  output: string
   tainted: boolean
   ms: number
-  error: string | null // set when the call threw, was blocked, or named an unknown tool
+  error: string | null
 }
 
 export async function executeTool(
@@ -22,53 +22,30 @@ export async function executeTool(
   if (!tool) {
     log.warn({ tool: p.name }, 'Tool not found')
     const error = `Tool not found: ${p.name}`
-    return {
-      result: { type: 'tool_result', tool_use_id: p.id, content: error, is_error: true },
-      tainted: false,
-      ms: dayjs().diff(start),
-      error,
-    }
+    return { output: error, tainted: false, ms: dayjs().diff(start), error }
   }
 
   // Once the turn has read untrusted content, refuse any tool that can reach an
   // external destination for the rest of the turn.
   if (tool.arbitraryOutreach && tainted) {
     log.warn({ tool: p.name }, 'Tool blocked by exfil guardrail')
+    const error = 'Blocked by exfil guardrail'
     return {
-      result: {
-        type: 'tool_result',
-        tool_use_id: p.id,
-        content:
-          'Blocked by the exfil guardrail: this turn has already read untrusted content, so tools that can reach an external destination are disabled for the rest of this turn. Ask again in a new message and I can do it.',
-      },
+      output:
+        'Blocked by the exfil guardrail: this turn has already read untrusted content, so tools that can reach an external destination are disabled for the rest of this turn. Ask again in a new message and I can do it.',
       tainted: false,
       ms: dayjs().diff(start),
-      error: 'Blocked by exfil guardrail',
+      error,
     }
   }
 
   try {
-    const content = await tool.run(p.input)
-    log.info({ tool: p.name, ms: dayjs().diff(start), chars: content.length }, 'Tool ok')
-    return {
-      result: { type: 'tool_result', tool_use_id: p.id, content },
-      // deltas apply only on success, so a tool that threw leaves the model room to recover
-      tainted: tool.readsUntrusted ?? false,
-      ms: dayjs().diff(start),
-      error: null,
-    }
+    const output = await tool.run(p.input)
+    log.info({ tool: p.name, ms: dayjs().diff(start), chars: output.length }, 'Tool ok')
+    return { output, tainted: tool.readsUntrusted ?? false, ms: dayjs().diff(start), error: null }
   } catch (err) {
+    const error = String(err)
     log.warn({ tool: p.name, ms: dayjs().diff(start), err }, 'Tool failed')
-    return {
-      result: {
-        type: 'tool_result',
-        tool_use_id: p.id,
-        content: String(err),
-        is_error: true,
-      },
-      tainted: false,
-      ms: dayjs().diff(start),
-      error: String(err),
-    }
+    return { output: error, tainted: false, ms: dayjs().diff(start), error }
   }
 }

@@ -124,7 +124,12 @@ export async function turn(params: TurnParams): Promise<{
         .with({ type: 'tool_use' }, async (p) => {
           const outcome = await executeTool(tools, p, tainted)
           await onToolUse?.(p, outcome)
-          results.push(outcome.result)
+          results.push({
+            type: 'tool_result',
+            tool_use_id: p.id,
+            content: outcome.output,
+            ...(outcome.error && { is_error: true }),
+          })
           tainted ||= outcome.tainted
         })
         .with({ type: 'thinking' }, () => {

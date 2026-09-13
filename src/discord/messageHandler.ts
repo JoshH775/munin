@@ -18,6 +18,7 @@ import {
   pinMessageTool,
   postMessageTool,
   editMessageTool,
+  toolLogTool,
 } from '../ai/tools'
 import { platesTools } from '../ai/plates'
 import { resolveSettings } from '../repositories/channelSettings'
@@ -25,6 +26,7 @@ import { resolveMemory } from '../repositories/memory'
 import { getAppSettings } from '../repositories/appSettings'
 import { insertMessage, getConversation, toChatTranscript } from '../repositories/messages'
 import { insertUsage } from '../repositories/usage'
+import { insertToolLog } from '../repositories/toolLog'
 import { findUrls } from '../urls'
 import { dayjs } from '../time'
 import { splitForDiscord, postToolBreadcrumb } from './utils'
@@ -89,6 +91,7 @@ export async function messageHandler(
       postMessageTool(client),
       editMessageTool(client),
       setChannelCategoryTool(client),
+      toolLogTool(channelId),
       ...platesTools(),
       createChannelTool(message.guild),
       channelTreeTool(client, message.guild),
@@ -104,7 +107,7 @@ export async function messageHandler(
     ]
       .filter(Boolean)
       .join('\n\n')
-    // Tools used this phase and the running "-# …" breadcrumb showing them.
+    // Tools used since the last breadcrumb; postToolBreadcrumb posts and clears it.
     const used = new Map<string, number>()
     const turnStart = Date.now()
 
@@ -147,8 +150,17 @@ export async function messageHandler(
           })
         }
       },
-      onToolUse: async (tool) => {
+      onToolUse: async (tool, outcome) => {
         used.set(tool.name, (used.get(tool.name) ?? 0) + 1)
+        await insertToolLog({
+          in_reply_to: message.id,
+          channel_id: channelId,
+          tool: tool.name,
+          input: JSON.stringify(tool.input),
+          output: outcome.output,
+          error: outcome.error,
+          duration_ms: outcome.ms,
+        }).catch((err) => log.error({ err, tool: tool.name }, 'Tool log insert failed'))
       },
       tools,
     }).finally(stopTyping)

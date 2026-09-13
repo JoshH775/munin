@@ -12,6 +12,7 @@ import { log } from '../logger'
 import { insertNewReminder, deleteReminder, getPendingReminders } from '../repositories/reminders'
 import { getAllThreads } from '../discord/utils'
 import { searchMessages } from '../repositories/messages'
+import { searchToolLog } from '../repositories/toolLog'
 import { parseTime } from '../time'
 
 // A friendly status phrase count, given how many times a tool ran this flush.
@@ -593,6 +594,48 @@ export function pinMessageTool(client: Client) {
       }
       await message.pin()
       return `Pinned message ${messageId} in <#${channelId}>.`
+    },
+  })
+}
+
+export function toolLogTool(channelId: string) {
+  return makeTool({
+    name: 'tool_log',
+    label: (n) => `Checked the tool log ${plural(n, 'time')}`,
+    description:
+      'Look back at your own past tool calls: which tool ran, when, how long it took, and whether ' +
+      'it failed or was blocked and why. Use it when asked what you did, why something went wrong, ' +
+      'or how a tool has been behaving. Scoped to the current channel unless you pass `channelId`. ' +
+      'Newest first.',
+    inputSchema: z.object({
+      channelId: z.string().optional().describe('Channel to look at. Defaults to the current one.'),
+      tool: z.string().optional().describe('Restrict to one tool by name.'),
+      errorsOnly: z.boolean().optional().describe('Only calls that failed or were blocked.'),
+      since: z.iso
+        .datetime({ local: true })
+        .optional()
+        .describe('London local time (ISO 8601, no zone suffix); only calls after it.'),
+      limit: z.number().optional().describe('Maximum rows to return. Default is 50.'),
+    }),
+    readsUntrusted: true, // error text can carry fragments of whatever a failed tool fetched
+    run: async ({ channelId: scope = channelId, tool, errorsOnly, since, limit = 50 }) => {
+      const rows = await searchToolLog({
+        channelId: scope,
+        tool,
+        errorsOnly,
+        since: since ? parseTime(since) : undefined,
+        limit,
+      })
+      return JSON.stringify(
+        rows.map((r) => ({
+          at: r.created_at.tz().format('YYYY-MM-DD HH:mm:ss'),
+          tool: r.tool,
+          ok: !r.error,
+          ms: r.duration_ms,
+          input: JSON.stringify(r.input).slice(0, 200),
+          ...(r.error && { error: r.error }),
+        })),
+      )
     },
   })
 }
