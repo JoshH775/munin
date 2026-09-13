@@ -170,7 +170,7 @@ export async function turn(params: TurnParams): Promise<{
 }
 
 export async function listModelIds(): Promise<string[]> {
-  const ids = ['zai-org/GLM-5', 'zai-org/GLM-5.2', 'moonshotai/Kimi-K2.6', 'Qwen/Qwen3.5-397B-A17B']
+  const ids = ['zai-org/GLM-5', 'zai-org/GLM-5.2', 'zai-org/GLM-5.3-Flash', 'moonshotai/Kimi-K2.6', 'Qwen/Qwen3.5-397B-A17B']
   if (process.env.ANTHROPIC_API_KEY) {
     for await (const model of new Anthropic().models.list({ limit: 1000 })) {
       if (model.id.startsWith('claude-')) ids.push(model.id)
