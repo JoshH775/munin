@@ -19,6 +19,7 @@ import {
   postMessageTool,
   editMessageTool,
   toolLogTool,
+  createThreadTool,
 } from '../ai/tools'
 import { platesTools } from '../ai/plates'
 import { resolveSettings } from '../repositories/channelSettings'
@@ -94,6 +95,7 @@ export async function messageHandler(
       toolLogTool(channelId),
       ...platesTools(),
       createChannelTool(message.guild),
+      createThreadTool(message.guild),
       channelTreeTool(client, message.guild),
     ]
     const systemSuffix = [

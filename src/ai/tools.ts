@@ -306,6 +306,33 @@ export function createChannelTool(guild: Guild) {
   })
 }
 
+export function createThreadTool(guild: Guild) {
+  return makeTool({
+    name: 'create_thread',
+    label: (n) => `Created ${plural(n, 'thread')}`,
+    description:
+      'Create a new thread in a text channel by name and return its id. Fails if something of the same name already exists in that channel.',
+    inputSchema: z.object({
+      channelId: z.string().describe('The id of the text channel to create the thread in.'),
+      name: z.string().describe('The name for the new thread. Stick to a lowercase hyphenated name like channel names.'),
+    }),
+    run: async ({ channelId, name }) => {
+      const channel = guild.channels.cache.get(channelId)
+      if (!channel || channel.type !== ChannelType.GuildText) {
+        throw new Error(`No text channel found with id ${channelId}.`)
+      }
+      const wanted = name.trim().toLowerCase().replace(/\s+/g, '-')
+      const taken = channel.threads.cache.some((t) => t.name.toLowerCase() === wanted)
+      if (taken) {
+        throw new Error(`A thread named "${name}" already exists in #${channel.name}.`)
+      }
+
+      const created = await channel.threads.create({ name })
+      return `Created thread #${created.name} (${created.id}) in #${channel.name}.`
+    }
+  })
+}
+
 export function deleteCategoryTool(client: Client) {
   return makeTool({
     name: 'delete_category',
