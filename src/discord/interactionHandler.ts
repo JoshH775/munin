@@ -1,5 +1,5 @@
 import { log } from '../logger'
-import { type Interaction, EmbedBuilder } from 'discord.js'
+import { type Interaction } from 'discord.js'
 import { match } from 'ts-pattern'
 import { markReminderReceived, snoozeReminder } from '../repositories/reminders'
 import {
@@ -18,10 +18,10 @@ export async function interactionHandler(interaction: Interaction): Promise<void
       .with({ action: 'reminder_ack' }, async ({ id }) => {
         try {
           await markReminderReceived(id)
-          const embed = EmbedBuilder.from(interaction.message.embeds[0])
-            .setColor(0x3bb273)
-            .setFooter({ text: `Acknowledged by ${interaction.user.username}` })
-          await interaction.update({ embeds: [embed], components: [] })
+          await interaction.update({
+            content: `${interaction.message.content}\n-# Acknowledged by ${interaction.user.username}`,
+            components: [],
+          })
         } catch (err) {
           log.error({ err, customId: interaction.customId }, 'Reminder ack failed')
         }
@@ -30,10 +30,10 @@ export async function interactionHandler(interaction: Interaction): Promise<void
       .with({ action: 'reminder_snooze_1hr' }, async ({ id }) => {
         try {
           await snoozeReminder(id, 60)
-          const embed = EmbedBuilder.from(interaction.message.embeds[0])
-            .setColor(0xf1c40f)
-            .setFooter({ text: 'Snoozed for 1 hour' })
-          await interaction.update({ embeds: [embed], components: [] })
+          await interaction.update({
+            content: `${interaction.message.content}\n-# Snoozed for 1 hour`,
+            components: [],
+          })
           await new Promise((r) => setTimeout(r, 3000))
           await interaction.deleteReply()
         } catch (err) {
@@ -44,10 +44,10 @@ export async function interactionHandler(interaction: Interaction): Promise<void
       .with({ action: 'reminder_snooze_5min' }, async ({ id }) => {
         try {
           await snoozeReminder(id, 5)
-          const embed = EmbedBuilder.from(interaction.message.embeds[0])
-            .setColor(0xf1c40f)
-            .setFooter({ text: 'Snoozed for 5 minutes.' })
-          await interaction.update({ embeds: [embed], components: [] })
+          await interaction.update({
+            content: `${interaction.message.content}\n-# Snoozed for 5 minutes`,
+            components: [],
+          })
           await new Promise((r) => setTimeout(r, 3000))
           await interaction.deleteReply()
         } catch (err) {
