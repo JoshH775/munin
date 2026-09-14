@@ -3,7 +3,6 @@ import {
   ButtonBuilder,
   ButtonStyle,
   Collection,
-  EmbedBuilder,
   type AnyThreadChannel,
   type Channel,
   type Client,
@@ -16,7 +15,7 @@ import {
   type TextChannel,
 } from 'discord.js'
 import { listEphemeralChannelIds } from '../repositories/channelSettings'
-import { deleteMessages, getLatestMessage, insertMessage } from '../repositories/messages'
+import { deleteMessages, getLatestMessage } from '../repositories/messages'
 import { getDueReminders, markReminderSent } from '../repositories/reminders'
 import type { Tool } from '../ai/makeTool'
 import { log } from '../logger'
@@ -57,17 +56,7 @@ export async function postToolBreadcrumb({
     .toArray()
     .join(' · ')}`
   used.clear()
-  const message = await channel.send(body).catch(() => {})
-  if (message) {
-    await insertMessage({
-      channel_id: channel.id,
-      content: body,
-      user_id: channel.client.user!.id,
-      user_name: 'munin',
-      id: message.id,
-      sent_at: dayjs(message.createdAt),
-    })
-  }
+  await channel.send(body).catch(() => {})
 }
 
 export async function fetchAllMessages(
@@ -136,7 +125,6 @@ export async function dispatchReminders(client: Client): Promise<void> {
       log.warn({ reminderId: reminder.id, targetChannelId }, 'Reminder channel unavailable')
       continue
     }
-    const embed = new EmbedBuilder().setTitle('⏰ Reminder').setDescription(reminder.content)
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(`reminder_ack:${reminder.id}`)
@@ -152,18 +140,10 @@ export async function dispatchReminders(client: Client): Promise<void> {
         .setStyle(ButtonStyle.Secondary),
     )
     try {
-      const sent = await channel.send({
-        content: reminder.target ? `<@${reminder.target}>` : undefined,
-        embeds: [embed],
+      // Flat text, not an embed: push notifications show `content` and would otherwise be blank.
+      await channel.send({
+        content: `⏰ **Reminder**\n${reminder.content}${reminder.target ? `\n<@${reminder.target}>` : ''}`,
         components: [row],
-      })
-      await insertMessage({
-        channel_id: targetChannelId,
-        content: `⏰ ${reminder.content}`,
-        user_id: client.user!.id,
-        user_name: 'munin',
-        id: sent.id,
-        sent_at: dayjs(sent.createdAt),
       })
       await markReminderSent(reminder.id)
       log.info({ reminderId: reminder.id }, 'Reminder delivered')
