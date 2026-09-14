@@ -4,6 +4,7 @@ import {
   deleteMessages,
   getLatestMessage,
   insertMessage,
+  updateMessageContent,
 } from '../repositories/messages'
 import { deleteSettings } from '../repositories/channelSettings'
 import { fetchAllMessages, getAllThreads, sweepEphemeral, dispatchReminders } from './utils'
@@ -36,6 +37,14 @@ let ready = false
 
 client.on(Events.MessageCreate, async (message) => {
   if (ready) messageHandler(client, message)
+})
+
+client.on(Events.MessageUpdate, async (old, updated) => {
+  if (old.content !== null && old.content === updated.content) return // unfurl or pin, not an edit
+  const message = updated.partial ? await updated.fetch().catch(() => null) : updated
+  if (!message?.content.trim()) return
+  log.info({ id: message.id }, 'Message edited')
+  await updateMessageContent(message.id, message.content)
 })
 
 client.on(Events.MessageDelete, (message) => {

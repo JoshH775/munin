@@ -15,6 +15,10 @@ export async function insertMessage(message: Insertable<Messages>): Promise<bool
   return result.numInsertedOrUpdatedRows === 1n
 }
 
+export async function updateMessageContent(id: string, content: string): Promise<void> {
+  await db.updateTable('messages').set({ content }).where('id', '=', id).execute()
+}
+
 export async function deleteMessages(ids: string[]): Promise<void> {
   if (ids.length === 0) return
   await db.deleteFrom('messages').where('id', 'in', ids).execute()
@@ -70,7 +74,7 @@ export function toChatTranscript(
   messages: Selectable<Messages>[],
   botUserId: string,
 ): Anthropic.MessageParam[] {
-  const params = messages
+  const transcript = messages
     .filter((m) => m.content.trim()) // drop contentless messages (attachments, embeds, system events)
     // keep user messages and munin's real replies; drop its own status lines. munin's replies never
     // start with '-# ' (its tool summaries do); the oldest tool rows are bare 'Tool used:'.
@@ -83,8 +87,13 @@ export function toChatTranscript(
       role: m.user_id === botUserId ? 'assistant' : 'user',
       content: m.content,
     }))
-  const firstUser = params.findIndex((p) => p.role === 'user')
-  const transcript = firstUser === -1 ? [] : params.slice(firstUser)
+  // The API requires a user turn first, and a thread munin opened starts with its own message.
+  if (transcript[0]?.role === 'assistant') {
+    transcript.unshift({
+      role: 'user',
+      content: '(not from the user: munin opened this thread, nobody had spoken yet)',
+    })
+  }
   const last = transcript.at(-1)
   if (last && typeof last.content === 'string') {
     last.content = [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }]
