@@ -9,6 +9,7 @@ import {
   type Client,
   type ForumChannel,
   type Guild,
+  type GuildMember,
   type MediaChannel,
   type Message,
   type NewsChannel,
@@ -171,6 +172,12 @@ export async function dispatchReminders(client: Client): Promise<void> {
       log.error({ err, reminderId: reminder.id }, 'Reminder delivery failed')
     }
   }
+}
+
+// Every human member of a guild. Needs the GuildMembers privileged intent.
+export async function fetchNonBotUsers(guild: Guild): Promise<GuildMember[]> {
+  const members = await guild.members.fetch()
+  return [...members.values()].filter((m) => !m.user.bot)
 }
 
 // every thread in a guild, active and archived, so a backfill misses nothing.

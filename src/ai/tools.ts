@@ -10,7 +10,7 @@ import { updateMemory } from '../repositories/memory'
 import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
 import { log } from '../logger'
 import { insertNewReminder, deleteReminder, getPendingReminders } from '../repositories/reminders'
-import { getAllThreads } from '../discord/utils'
+import { fetchNonBotUsers, getAllThreads } from '../discord/utils'
 import { searchMessages } from '../repositories/messages'
 import { searchToolLog } from '../repositories/toolLog'
 import { parseTime } from '../time'
@@ -314,7 +314,11 @@ export function createThreadTool(guild: Guild) {
       'Create a new thread in a text channel by name and return its id. Fails if something of the same name already exists in that channel.',
     inputSchema: z.object({
       channelId: z.string().describe('The id of the text channel to create the thread in.'),
-      name: z.string().describe('The name for the new thread. Stick to a lowercase hyphenated name like channel names.'),
+      name: z
+        .string()
+        .describe(
+          'The name for the new thread. Stick to a lowercase hyphenated name like channel names.',
+        ),
     }),
     run: async ({ channelId, name }) => {
       const channel = guild.channels.cache.get(channelId)
@@ -328,8 +332,15 @@ export function createThreadTool(guild: Guild) {
       }
 
       const created = await channel.threads.create({ name })
+      for (const member of await fetchNonBotUsers(guild)) {
+        await created.members
+          .add(member.id)
+          .catch((err) =>
+            log.error({ err, threadId: created.id, userId: member.id }, 'Thread add failed'),
+          )
+      }
       return `Created thread #${created.name} (${created.id}) in #${channel.name}.`
-    }
+    },
   })
 }
 
