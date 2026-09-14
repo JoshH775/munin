@@ -42,14 +42,11 @@ export async function messageHandler(
   client: Client,
   message: OmitPartialGroupDMChannel<Message<boolean>>,
 ): Promise<void> {
-  if (message.author.id === client.user?.id) return
   if (message.system) return // ignore discord system notices (thread created, pins, joins, …)
   if (!message.inGuild()) return // no DM intent, so this only narrows the type
   const channelId = message.channelId
   const parentChannelId = message.channel.isThread() ? message.channel.parentId : null
   try {
-    log.info({ channelId, parentChannelId, user: message.author.username }, 'Message received')
-
     await insertMessage({
       channel_id: channelId,
       content: message.content,
@@ -58,6 +55,9 @@ export async function messageHandler(
       id: message.id,
       sent_at: dayjs(message.createdAt),
     })
+    if (message.author.id === client.user?.id) return
+
+    log.info({ channelId, parentChannelId, user: message.author.username }, 'Message received')
 
     const [history, settings, memory, app] = await Promise.all([
       getConversation({ channelId }),
@@ -141,15 +141,7 @@ export async function messageHandler(
           log.info({ channelId, parts: parts.length }, 'Reply split across messages')
         }
         for (const part of parts) {
-          const sent = await message.channel.send(part)
-          await insertMessage({
-            channel_id: channelId,
-            content: part,
-            user_id: client.user!.id,
-            user_name: 'munin',
-            id: sent.id,
-            sent_at: dayjs(sent.createdAt),
-          })
+          await message.channel.send(part)
         }
       },
       onToolUse: async (tool, outcome) => {
