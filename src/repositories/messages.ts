@@ -75,14 +75,8 @@ export function toChatTranscript(
   botUserId: string,
 ): Anthropic.MessageParam[] {
   const transcript = messages
-    .filter((m) => m.content.trim()) // drop contentless messages (attachments, embeds, system events)
-    // keep user messages and munin's real replies; drop its own status lines. munin's replies never
-    // start with '-# ' (its tool summaries do); the oldest tool rows are bare 'Tool used:'.
-    .filter(
-      (m) =>
-        m.user_id !== botUserId ||
-        (!m.content.startsWith('-# ') && !m.content.startsWith('Tool used:')),
-    )
+    // 'tool'/'thinking' are munin's status lines; contentless rows are attachments and embeds
+    .filter((m) => m.kind === 'chat' && m.content.trim())
     .map((m): Anthropic.MessageParam => ({
       role: m.user_id === botUserId ? 'assistant' : 'user',
       content: m.content,
@@ -108,7 +102,7 @@ export async function searchMessages(opts: {
   limit?: number
 }): Promise<Selectable<Messages>[]> {
   const { channelId, since, query, limit } = opts
-  let q = db.selectFrom('messages').selectAll()
+  let q = db.selectFrom('messages').selectAll().where('kind', '=', 'chat')
   if (channelId) q = q.where('channel_id', '=', channelId)
   if (since) q = q.where('sent_at', '>=', since)
   if (query) q = q.where('content', 'ilike', `%${query}%`)

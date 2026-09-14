@@ -479,7 +479,7 @@ export function listRemindersTool() {
   })
 }
 
-export function searchMessagesTool(client: Client) {
+export function searchMessagesTool() {
   return makeTool({
     name: 'search_messages',
     label: (n) => `Searched messages ${plural(n, 'time')}`,
@@ -488,7 +488,8 @@ export function searchMessagesTool(client: Client) {
       'current channel. Use it when the user refers back to something older than what is in front of ' +
       'you, or asks what was said about a topic. It matches messages whose text contains the `query`, ' +
       'across every channel unless you scope it with `channelId`, and returns them newest first with ' +
-      'the channel, author, and time of each. Your own messages are left out.',
+      'the channel, author, and time of each. Your own past replies are included, so you can look up ' +
+      'what you said as well as what was said to you; only your status lines are left out.',
     inputSchema: z.object({
       query: z.string().optional().describe('Search term to match in message content.'),
       channelId: z.string().optional().describe('Optional channel to restrict the search to.'),
@@ -512,12 +513,10 @@ export function searchMessagesTool(client: Client) {
         since: since ? parseTime(since) : undefined,
       })
       return JSON.stringify(
-        results
-          .filter((m) => m.user_id !== client.user?.id)
-          .map(({ created_at, ...m }) => ({
-            ...m,
-            sent_at: m.sent_at.tz().format('YYYY-MM-DD HH:mm'),
-          })),
+        results.map(({ created_at, kind, ...m }) => ({
+          ...m,
+          sent_at: m.sent_at.tz().format('YYYY-MM-DD HH:mm'),
+        })),
       )
     },
   })

@@ -47,6 +47,7 @@ export async function messageHandler(
   const channelId = message.channelId
   const parentChannelId = message.channel.isThread() ? message.channel.parentId : null
   try {
+    const own = message.author.id === client.user?.id
     await insertMessage({
       channel_id: channelId,
       content: message.content,
@@ -54,8 +55,9 @@ export async function messageHandler(
       user_name: message.author.username,
       id: message.id,
       sent_at: dayjs(message.createdAt),
+      kind: own && message.content.startsWith('-# ') ? 'tool' : 'chat',
     })
-    if (message.author.id === client.user?.id) return
+    if (own) return
 
     log.info({ channelId, parentChannelId, user: message.author.username }, 'Message received')
 
@@ -87,7 +89,7 @@ export async function messageHandler(
       listRemindersTool(),
       deleteCategoryTool(client),
       renameCategoryTool(client),
-      searchMessagesTool(client),
+      searchMessagesTool(),
       pinMessageTool(client),
       postMessageTool(client),
       editMessageTool(client),
