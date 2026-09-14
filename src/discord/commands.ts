@@ -4,6 +4,7 @@ import {
   EmbedBuilder,
   MessageFlags,
   SlashCommandBuilder,
+  SnowflakeUtil,
 } from 'discord.js'
 import { efforts, listModelIds, type Effort } from '../ai'
 import { resolveMemory } from '../repositories/memory'
@@ -11,6 +12,7 @@ import { resolveSettings, setMuted, toggleEphemeral } from '../repositories/chan
 import { deleteMessages } from '../repositories/messages'
 import { getAppSettings, updateAppSettings } from '../repositories/appSettings'
 import { log } from '../logger'
+import { parseTime } from '../time'
 
 // discord caps choices at 25.
 const modelIds = (await listModelIds()).slice(0, 25)
@@ -54,9 +56,13 @@ const clear = new SlashCommandBuilder()
     o
       .setName('count')
       .setDescription('How many recent messages to delete')
-      .setRequired(true)
       .setMinValue(1)
       .setMaxValue(100),
+  )
+  .addStringOption((o) =>
+    o
+      .setName('since')
+      .setDescription('Delete everything after a London time (2026-09-14 13:00) or a message id'),
   )
 
 const commands = [config, memory, mute, unmute, ephemeral, clear]
@@ -153,10 +159,18 @@ export async function handleEphemeralInteraction(
   })
 }
 
+// Discord ids encode their own timestamp, so a time converts to an id usable as an `after` cursor.
+function toSnowflake(since: string): string | null {
+  if (/^\d{17,20}$/.test(since)) return since
+  const t = parseTime(since)
+  return t.isValid() ? SnowflakeUtil.generate({ timestamp: t.valueOf() }).toString() : null
+}
+
 export async function handleClearInteraction(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
-  const count = interaction.options.getInteger('count', true)
+  const count = interaction.options.getInteger('count') ?? 100
+  const since = interaction.options.getString('since')
   const channel = interaction.channel
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
     await interaction.reply({
@@ -165,13 +179,31 @@ export async function handleClearInteraction(
     })
     return
   }
-  const deleted = await channel.bulkDelete(count, true)
+
+  let asked = count
+  let deleted
+  if (since) {
+    const after = toSnowflake(since)
+    if (!after) {
+      await interaction.reply({
+        content: `I couldn't read "${since}" as a time or a message id.`,
+        flags: MessageFlags.Ephemeral,
+      })
+      return
+    }
+    const found = await channel.messages.fetch({ after, limit: 100 })
+    asked = found.size
+    deleted = await channel.bulkDelete(found, true)
+  } else {
+    deleted = await channel.bulkDelete(count, true)
+  }
+
   await deleteMessages([...deleted.keys()])
   log.info({ channelId: channel.id, deleted: deleted.size }, 'Cleared messages')
   await interaction.reply({
     content:
       `Deleted ${deleted.size} message${deleted.size === 1 ? '' : 's'}.` +
-      (deleted.size < count ? " (Messages older than 14 days can't be bulk-deleted.)" : ''),
+      (deleted.size < asked ? " (Messages older than 14 days can't be bulk-deleted.)" : ''),
     flags: MessageFlags.Ephemeral,
   })
 }
