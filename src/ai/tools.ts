@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { makeTool } from './makeTool'
-import { updateMemory } from '../repositories/memory'
+import { getMemory, updateMemory } from '../repositories/memory'
 import { CategoryChannel, ChannelType, Guild, TextChannel, type Client } from 'discord.js'
 import { log } from '../logger'
 import { insertNewReminder, deleteReminder, getPendingReminders } from '../repositories/reminders'
@@ -118,50 +118,63 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
   })
 }
 
-export function updateMemoryTool(channelId: string, parentChannelId: string | null) {
-  const isThread = parentChannelId !== null
+export function updateChannelMemoryTool() {
   return makeTool({
-    name: 'update_memory',
+    name: 'update_channel_memory',
     label: () => 'Updated memory',
     description:
-      "Rewrite memory. Memory is a living document you keep current, not a log: pass the full new text for a tier, preserving what still matters and folding in anything worth remembering. Each field replaces that tier's memory entirely, so never send a fragment or a diff. " +
-      (isThread
-        ? "You are in a thread. `memory` is this thread's own memory. `parentMemory` is the parent channel's memory, shared across the whole channel; set it only for facts that belong at that broader scope."
-        : "You are in a channel. `memory` is this channel's own memory. `parentMemory` is the global memory, shared across every channel; set it only for facts that belong at that broadest scope.") +
-      ' Omit a field to leave that tier untouched; provide at least one.',
+      "Rewrite a channel's or thread's memory. Memory is a living document you keep current, not a " +
+      'log: pass the full new text, preserving what still matters and folding in anything worth ' +
+      'remembering. It replaces that memory entirely, so never send a fragment or a diff. A thread ' +
+      'and its parent channel keep separate memories, so pass the id of the one you mean, which is ' +
+      'usually where you are; get other ids from channel_tree.',
     inputSchema: z.object({
-      memory: z
-        .string()
-        .optional()
-        .describe(
-          isThread
-            ? "This thread's updated memory document."
-            : "This channel's updated memory document.",
-        ),
-      parentMemory: z
-        .string()
-        .optional()
-        .describe(
-          isThread
-            ? "The parent channel's updated memory document, shared across the whole channel."
-            : 'The global memory document, shared across every channel.',
-        ),
+      channelId: z.string().describe('The id of the channel or thread whose memory to rewrite.'),
+      content: z.string().describe('The full updated memory document.'),
     }),
-    run: async ({ memory, parentMemory }) => {
-      const updated: string[] = []
-      if (memory !== undefined) {
-        await updateMemory({ channelId, memory })
-        updated.push(isThread ? 'thread memory' : 'channel memory')
-      }
-      if (parentMemory !== undefined) {
-        await updateMemory({
-          channelId: parentChannelId ?? 'global',
-          memory: parentMemory,
-        })
-        updated.push(isThread ? 'channel memory' : 'global memory')
-      }
-      if (updated.length === 0) return 'No memory provided; nothing updated.'
-      return `Updated ${updated.join(' and ')}.`
+    run: async ({ channelId, content }) => {
+      await updateMemory({ channelId, memory: content })
+      return `Updated memory for <#${channelId}>.`
+    },
+  })
+}
+
+export function readMemoryTool() {
+  return makeTool({
+    name: 'read_memory',
+    label: (n) => `Read ${plural(n, 'memory', 'memories')}`,
+    description:
+      'Read the memory of a channel or thread you are not in. You are already given the memory for ' +
+      "where you are, so reach for this when something from another corner of Josh's life bears on " +
+      'what he is asking, or when he refers to something you kept somewhere else. Pass "global" for ' +
+      'the memory shared across every channel. Get ids from channel_tree.',
+    inputSchema: z.object({
+      channelId: z
+        .string()
+        .describe('The id of the channel or thread whose memory to read, or "global".'),
+    }),
+    run: async ({ channelId }) => {
+      const content = await getMemory(channelId)
+      if (!content?.trim()) return `Nothing stored for ${channelId}.`
+      return content
+    },
+  })
+}
+
+export function updateGlobalMemoryTool() {
+  return makeTool({
+    name: 'update_global_memory',
+    label: () => 'Updated global memory',
+    description:
+      'Rewrite the global memory, which is shared across every channel. Same rules as channel ' +
+      'memory: pass the full new text, which replaces it entirely. Keep it for what holds true ' +
+      'everywhere, rather than anything that belongs to one channel.',
+    inputSchema: z.object({
+      content: z.string().describe('The full updated global memory document.'),
+    }),
+    run: async ({ content }) => {
+      await updateMemory({ channelId: 'global', memory: content })
+      return 'Updated global memory.'
     },
   })
 }
@@ -226,7 +239,7 @@ export function channelTreeTool(client: Client, guild: Guild) {
     name: 'channel_tree',
     label: () => 'Looked at the channels',
     description:
-      "Show the server's channels grouped by category, each channel and category with its id, and any threads nested under their channel. Reach for it to see what exists and grab the ids you need before linking a channel or thread with `<#id>`, creating a channel or category, deleting a category, or moving a channel.",
+      "Show the server's channels grouped by category, each channel and category with its id, its topic where it has one, and any threads nested under their channel. Reach for it to see what exists and grab the ids you need before linking a channel or thread with `<#id>`, creating a channel or category, deleting a category, moving a channel, or editing a channel's name or topic.",
     inputSchema: z.object({}),
     run: async () => {
       const threads = await getAllThreads(guild)
@@ -244,7 +257,9 @@ export function channelTreeTool(client: Client, guild: Guild) {
         return channels
           .map((c) => {
             const threadLines = threadsFor(c).map((t) => `    - ${t.name} (${t.id})`)
-            return [`- #${c.name} (${c.id})`, ...threadLines].join('\n')
+            return [`- #${c.name} (${c.id})${c.topic ? ` "${c.topic}"` : ''}`, ...threadLines].join(
+              '\n',
+            )
           })
           .join('\n')
       }
@@ -284,8 +299,17 @@ export function createChannelTool(guild: Guild) {
         .enum(['text', 'category'])
         .describe('Whether to create a text channel or a category.'),
       name: z.string().describe('The name for the new channel or category.'),
+      topic: z
+        .string()
+        .optional()
+        .describe(
+          'Optional topic for a text channel: the one-line description shown under its name. Categories cannot have one.',
+        ),
     }),
-    run: async ({ type, name }) => {
+    run: async ({ type, name, topic }) => {
+      if (topic !== undefined && type !== 'text') {
+        throw new Error('Only text channels can have a topic.')
+      }
       const channelType = type === 'text' ? ChannelType.GuildText : ChannelType.GuildCategory
       const wanted =
         type === 'text' ? name.trim().toLowerCase().replace(/\s+/g, '-') : name.toLowerCase()
@@ -298,7 +322,7 @@ export function createChannelTool(guild: Guild) {
         )
       }
 
-      const created = await guild.channels.create({ name, type: channelType })
+      const created = await guild.channels.create({ name, type: channelType, topic })
       return type === 'text'
         ? `Created text channel #${created.name} (${created.id}).`
         : `Created category "${created.name}" (${created.id}).`
@@ -518,6 +542,37 @@ export function searchMessagesTool() {
           sent_at: m.sent_at.tz().format('YYYY-MM-DD HH:mm'),
         })),
       )
+    },
+  })
+}
+
+export function editChannelTool(client: Client) {
+  return makeTool({
+    name: 'edit_channel',
+    label: (n) => `Edited ${plural(n, 'channel')}`,
+    description:
+      'Rename a text channel, set its topic, or both. The topic is the one-line description shown ' +
+      'under the channel name, good for saying what the channel is for. Pass the channel id and ' +
+      'whichever of name and topic you want to change; leave a field out to keep it as it is, or ' +
+      'pass an empty topic to clear it. Get ids from channel_tree.',
+    inputSchema: z.object({
+      channelId: z.string().describe('The id of the text channel to edit.'),
+      name: z
+        .string()
+        .optional()
+        .describe('New name. Stick to a lowercase hyphenated name like the other channels.'),
+      topic: z.string().optional().describe('New topic, or an empty string to clear it.'),
+    }),
+    run: async ({ channelId, name, topic }) => {
+      const channel = client.channels.cache.get(channelId)
+      if (channel?.type !== ChannelType.GuildText) {
+        throw new Error(`No text channel found with id ${channelId}.`)
+      }
+      if (name === undefined && topic === undefined) {
+        throw new Error('Nothing to change: pass a name, a topic, or both.')
+      }
+      await channel.edit({ name, topic })
+      return `Edited #${channel.name} (${channelId}).`
     },
   })
 }
