@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url'
 import { Message, ChannelType, Client, type OmitPartialGroupDMChannel } from 'discord.js'
 import { turn } from '../ai'
 import {
-  updateMemoryTool,
+  updateChannelMemoryTool,
+  updateGlobalMemoryTool,
+  readMemoryTool,
   tavilySearchTool,
   tavilyExtractTool,
   createReminderTool,
@@ -14,6 +16,7 @@ import {
   createChannelTool,
   channelTreeTool,
   renameCategoryTool,
+  editChannelTool,
   searchMessagesTool,
   pinMessageTool,
   postMessageTool,
@@ -80,8 +83,9 @@ export async function messageHandler(
       for (const url of findUrls(m.content)) trustedUrls.add(url)
     }
     const tools = [
-      // ephemeral channels are throwaway: no memory tool, so nothing here is remembered
-      ...(settings.ephemeral ? [] : [updateMemoryTool(channelId, parentChannelId)]),
+      // ephemeral channels are throwaway: no memory tools, so nothing here is remembered
+      ...(settings.ephemeral ? [] : [updateChannelMemoryTool(), updateGlobalMemoryTool()]),
+      readMemoryTool(),
       tavilySearchTool(trustedUrls),
       tavilyExtractTool(trustedUrls),
       createReminderTool(client, message.author.id),
@@ -89,6 +93,7 @@ export async function messageHandler(
       listRemindersTool(),
       deleteCategoryTool(client),
       renameCategoryTool(client),
+      editChannelTool(client),
       searchMessagesTool(),
       pinMessageTool(client),
       postMessageTool(client),
@@ -100,11 +105,16 @@ export async function messageHandler(
       createThreadTool(message.guild),
       channelTreeTool(client, message.guild),
     ]
+    const parent = message.channel.isThread() ? message.channel.parent : null
+    // A thread has no topic of its own, so it shows its parent's.
+    const topicOwner = parent ?? message.channel
+    const topic = 'topic' in topicOwner ? topicOwner.topic : null
     const systemSuffix = [
       `The current date and time is ${dayjs(message.createdAt).tz().format('dddd D MMMM YYYY HH:mm')}, London time.`,
       message.channel.isThread()
-        ? `You are in ${message.channel.name} (thread of #${message.channel.parent?.name ?? 'unknown'}) (id ${channelId}).`
+        ? `You are in ${message.channel.name} (id ${channelId}), a thread of #${parent?.name ?? 'unknown'} (id ${parentChannelId}).`
         : `You are in #${message.channel.name} (id ${channelId}).`,
+      topic && `The channel topic is "${topic}".`,
       settings.ephemeral &&
         'This channel is ephemeral: it clears itself a few minutes after the last message and nothing said here is remembered.',
       memory.trim() && `<memory>\n${memory}\n</memory>`,
