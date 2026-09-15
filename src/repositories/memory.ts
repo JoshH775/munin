@@ -23,6 +23,15 @@ export async function resolveMemory(
     .join('\n\n')
 }
 
+export async function getMemory(channelId: string): Promise<string | null> {
+  const row = await db
+    .selectFrom('memory')
+    .select('content')
+    .where('channel_id', '=', channelId)
+    .executeTakeFirst()
+  return row?.content ?? null
+}
+
 export async function updateMemory({
   channelId,
   memory,
