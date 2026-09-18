@@ -18,8 +18,8 @@ import { parseTime } from '../time'
 // A friendly status phrase count, given how many times a tool ran this flush.
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-const apiKey = process.env.TAVILY_API_KEY
-const tavilyClient = apiKey ? tavily({ apiKey }) : null
+const tavilyKeys = [process.env.TAVILY_API_KEY, process.env.OTHER_TAVILY_API_KEY].filter(Boolean) as string[]
+const tavilyClients = tavilyKeys.map((apiKey) => tavily({ apiKey }))
 
 // Client-side web search via Tavily. Returns clean, ranked snippets; the SDK types the response.
 export function tavilySearchTool(trustedUrls: Set<string>) {
@@ -35,25 +35,33 @@ export function tavilySearchTool(trustedUrls: Set<string>) {
       query: z.string().describe('The search query.'),
     }),
     run: async ({ query }) => {
-      if (!tavilyClient) return 'Web search is unavailable: TAVILY_API_KEY is not set.'
-      try {
-        const { results } = await tavilyClient.search(query, {
-          searchDepth: 'basic',
-          maxResults: 6,
-        })
-        if (results.length === 0) return `No results for "${query}".`
+      if (tavilyClients.length === 0) return 'Web search is unavailable: no Tavily API keys set.'
+      let lastErr: unknown
+      for (const client of tavilyClients) {
+        try {
+          const { results } = await client.search(query, {
+            searchDepth: 'basic',
+            maxResults: 6,
+          })
+          if (results.length === 0) return `No results for "${query}".`
 
-        for (const r of results) {
-          const norm = normalizeUrl(r.url)
-          if (norm) trustedUrls.add(norm)
+          for (const r of results) {
+            const norm = normalizeUrl(r.url)
+            if (norm) trustedUrls.add(norm)
+          }
+          return results
+            .map((r) => `${r.title} (score ${r.score.toFixed(2)})\n${r.url}\n${r.content}`)
+            .join('\n\n')
+        } catch (err: any) {
+          lastErr = err
+          const status = err?.status ?? err?.response?.status
+          if (status === 401 || status === 429) continue
+          console.error('Tavily search failed', err)
+          return `Web search failed: ${String(err)}`
         }
-        return results
-          .map((r) => `${r.title} (score ${r.score.toFixed(2)})\n${r.url}\n${r.content}`)
-          .join('\n\n')
-      } catch (err) {
-        console.error('Tavily search failed', err)
-        return `Web search failed: ${String(err)}`
       }
+      console.error('Tavily search failed (all keys exhausted)', lastErr)
+      return `Web search failed: all API keys exhausted`
     },
     readsUntrusted: true,
   })
@@ -75,7 +83,7 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
       query: z.string().optional(),
     }),
     run: async ({ urls, query }) => {
-      if (!tavilyClient) return 'Web search is unavailable: TAVILY_API_KEY is not set.'
+      if (tavilyClients.length === 0) return 'Web extract is unavailable: no Tavily API keys set.'
 
       const allowed: string[] = []
       const blocked: string[] = []
@@ -88,31 +96,39 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
         return `Refused: none of those URLs came from a search result or the conversation, so they can't be opened. Run web_search first, then extract from the URLs it returns. Blocked: ${blocked.join(', ')}`
       }
 
-      try {
-        const { results, failedResults } = await tavilyClient.extract(allowed, {
-          format: 'markdown',
-          ...(query ? { query, chunksPerSource: 5 } : {}),
-        })
+      let lastErr: unknown
+      for (const client of tavilyClients) {
+        try {
+          const { results, failedResults } = await client.extract(allowed, {
+            format: 'markdown',
+            ...(query ? { query, chunksPerSource: 5 } : {}),
+          })
 
-        const rows = results.map((r) => {
-          let content = r.rawContent
-          if (content.length >= 3000) {
-            log.warn({ url: r.url, chars: content.length }, 'Extract content truncated')
-            content = `${content.slice(0, 2950)}\n\n[content truncated]`
+          const rows = results.map((r) => {
+            let content = r.rawContent
+            if (content.length >= 3000) {
+              log.warn({ url: r.url, chars: content.length }, 'Extract content truncated')
+              content = `${content.slice(0, 2950)}\n\n[content truncated]`
+            }
+            return `${r.title} - ${r.url}\n\n${content}`
+          })
+          for (const f of failedResults) {
+            rows.push(`${f.url}\n\nCouldn't open: ${f.error}`)
           }
-          return `${r.title} - ${r.url}\n\n${content}`
-        })
-        for (const f of failedResults) {
-          rows.push(`${f.url}\n\nCouldn't open: ${f.error}`)
+          if (blocked.length) {
+            rows.push(`Refused (not from a search result or the conversation): ${blocked.join(', ')}`)
+          }
+          return rows.length ? rows.join('\n\n') : 'No content returned.'
+        } catch (err: any) {
+          lastErr = err
+          const status = err?.status ?? err?.response?.status
+          if (status === 401 || status === 429) continue
+          console.error('Tavily extract failed', err)
+          return `Web extraction failed: ${String(err)}`
         }
-        if (blocked.length) {
-          rows.push(`Refused (not from a search result or the conversation): ${blocked.join(', ')}`)
-        }
-        return rows.length ? rows.join('\n\n') : 'No content returned.'
-      } catch (err) {
-        console.error('Tavily extract failed', err)
-        return `Web extraction failed: ${String(err)}`
       }
+      console.error('Tavily extract failed (all keys exhausted)', lastErr)
+      return `Web extraction failed: all API keys exhausted`
     },
     readsUntrusted: true,
   })
