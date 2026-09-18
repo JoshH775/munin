@@ -169,6 +169,11 @@ export async function turn(params: TurnParams): Promise<{
   }
 }
 
+export async function verify(outcomes: ToolOutcome[], response: string): Promise<boolean> {
+  log.debug({ outcomes: outcomes.length, chars: response.length }, 'Verify stub')
+  return true
+}
+
 export async function listModelIds(): Promise<string[]> {
   const ids = ['zai-org/GLM-5', 'zai-org/GLM-5.2', 'zai-org/GLM-5.3-Flash', 'moonshotai/Kimi-K2.6', 'Qwen/Qwen3.5-397B-A17B']
   if (process.env.ANTHROPIC_API_KEY) {
