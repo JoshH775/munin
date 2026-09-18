@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { makeTool } from './makeTool'
-import { dayjs } from '../time'
+import { makeTool } from '../makeTool'
+import { dayjs } from '../../time'
 
 // Read-only tools over Plates, Josh's workout tracker. Public API, fixed host, his own data.
 
