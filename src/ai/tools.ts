@@ -54,8 +54,7 @@ export function tavilySearchTool(trustedUrls: Set<string>) {
             .join('\n\n')
         } catch (err: any) {
           lastErr = err
-          const status = err?.status ?? err?.response?.status
-          if (status === 401 || status === 429) continue
+          if (/^(40[12]|429) /.test(err?.message ?? '')) continue
           console.error('Tavily search failed', err)
           return `Web search failed: ${String(err)}`
         }
@@ -121,8 +120,7 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
           return rows.length ? rows.join('\n\n') : 'No content returned.'
         } catch (err: any) {
           lastErr = err
-          const status = err?.status ?? err?.response?.status
-          if (status === 401 || status === 429) continue
+          if (/^(40[12]|429) /.test(err?.message ?? '')) continue
           console.error('Tavily extract failed', err)
           return `Web extraction failed: ${String(err)}`
         }
