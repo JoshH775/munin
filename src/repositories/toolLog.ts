@@ -12,7 +12,7 @@ export async function searchToolLog(opts: {
   tool?: string
   errorsOnly?: boolean
   since?: Dayjs
-  limit: number
+  limit?: number
 }): Promise<Selectable<ToolLog>[]> {
   const { channelId, tool, errorsOnly, since, limit } = opts
   let q = db.selectFrom('tool_log').selectAll()
@@ -20,5 +20,7 @@ export async function searchToolLog(opts: {
   if (tool) q = q.where('tool', '=', tool)
   if (errorsOnly) q = q.where('error', 'is not', null)
   if (since) q = q.where('created_at', '>=', since)
-  return q.orderBy('created_at', 'desc').limit(limit).execute()
+  q = q.orderBy('created_at', 'desc')
+  if (limit) q = q.limit(limit)
+  return q.execute()
 }
