@@ -28,8 +28,9 @@ export function tavilySearchTool(trustedUrls: Set<string>) {
     description:
       'Search the web for current or factual information. Returns the top few results as title, ' +
       'URL, and a short snippet, which is usually enough to answer from directly. Reach for it when ' +
-      'a question turns on something you do not know or that may have changed. Make each query count ' +
-      'rather than firing off several.',
+      'a question turns on something you do not know or that may have changed. Budget: at most 5 ' +
+      'searches per turn, and usually 1-2 is enough. Combine related questions into a single broad ' +
+      'query rather than splitting them.',
     inputSchema: z.object({
       query: z.string().describe('The search query.'),
     }),
