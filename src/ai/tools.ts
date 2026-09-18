@@ -55,7 +55,7 @@ export function tavilySearchTool(trustedUrls: Set<string>) {
         } catch (err: any) {
           lastErr = err
           const msg = String(err?.message ?? '')
-          if (msg.includes('401') || msg.includes('402') || msg.includes('429')) continue
+          if (msg.includes('usage limit') || msg.includes('401') || msg.includes('429')) continue
           console.error('Tavily search failed', err)
           return `Web search failed: ${msg}`
         }
@@ -122,7 +122,7 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
         } catch (err: any) {
           lastErr = err
           const msg = String(err?.message ?? '')
-          if (msg.includes('401') || msg.includes('402') || msg.includes('429')) continue
+          if (msg.includes('usage limit') || msg.includes('401') || msg.includes('429')) continue
           console.error('Tavily extract failed', err)
           return `Web extraction failed: ${msg}`
         }
