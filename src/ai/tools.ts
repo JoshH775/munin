@@ -54,9 +54,10 @@ export function tavilySearchTool(trustedUrls: Set<string>) {
             .join('\n\n')
         } catch (err: any) {
           lastErr = err
-          if (/^(40[12]|429) /.test(err?.message ?? '')) continue
+          const msg = String(err?.message ?? '')
+          if (msg.includes('401') || msg.includes('402') || msg.includes('429')) continue
           console.error('Tavily search failed', err)
-          return `Web search failed: ${String(err)}`
+          return `Web search failed: ${msg}`
         }
       }
       console.error('Tavily search failed (all keys exhausted)', lastErr)
@@ -120,9 +121,10 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
           return rows.length ? rows.join('\n\n') : 'No content returned.'
         } catch (err: any) {
           lastErr = err
-          if (/^(40[12]|429) /.test(err?.message ?? '')) continue
+          const msg = String(err?.message ?? '')
+          if (msg.includes('401') || msg.includes('402') || msg.includes('429')) continue
           console.error('Tavily extract failed', err)
-          return `Web extraction failed: ${String(err)}`
+          return `Web extraction failed: ${msg}`
         }
       }
       console.error('Tavily extract failed (all keys exhausted)', lastErr)
