@@ -1,30 +1,19 @@
 import 'dotenv/config'
-import Anthropic from '@anthropic-ai/sdk'
-import { match } from 'ts-pattern'
 import type { Tool } from './makeTool'
 import { executeTool, type ToolOutcome } from './executeTool'
 import { log } from '../logger'
+import OpenAI from 'openai'
 
-function clientFor(model: string) {
-  if (model.toLowerCase().includes('claude')) {
-    const key = process.env.ANTHROPIC_API_KEY
-    if (!key) throw new Error('Anthropic API key not set.')
-    return new Anthropic()
-  } else {
-    const key = process.env.DEEPINFRA_API_KEY
-    if (!key) throw new Error('DeepInfra API key not set.')
-    return new Anthropic({
-      apiKey: key,
-      baseURL: 'https://api.deepinfra.com/anthropic',
-    })
-  }
-}
+const client = new OpenAI({
+  apiKey: process.env.DEEPINFRA_API_KEY,
+  baseURL: 'https://api.deepinfra.com/v1/openai',
+})
 
 export const efforts = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type Effort = (typeof efforts)[number]
 
 export type TurnParams = {
-  messages: readonly Anthropic.MessageParam[]
+  messages: readonly OpenAI.ChatCompletionMessageParam[]
   system: string | (() => string)
   // per-run/per-user text that sits after the cached static system block
   systemSuffix?: string
@@ -33,18 +22,20 @@ export type TurnParams = {
   maxTokens?: number
   effort?: Effort
   onRoundStart?: () => void
-  onToolUse?: (tool: Anthropic.ToolUseBlock, outcome: ToolOutcome) => void | Promise<void>
+  onToolUse?: (
+    tool: OpenAI.ChatCompletionMessageFunctionToolCall,
+    outcome: ToolOutcome,
+  ) => void | Promise<void>
   onText?: (text: string) => void | Promise<void>
   onThinking?: () => void
 }
 
 export async function turn(params: TurnParams): Promise<{
-  messages: Anthropic.MessageParam[]
+  messages: OpenAI.ChatCompletionMessageParam[]
   usage: {
     input_tokens: number
     output_tokens: number
     cache_read_input_tokens: number
-    cache_creation_input_tokens: number
   }
   rounds: number
   truncated?: boolean
@@ -67,81 +58,64 @@ export async function turn(params: TurnParams): Promise<{
   let rounds = 0
   let tainted = false
 
-  const client = clientFor(model)
-
-  const conversation = [...messages]
+  const conversation: OpenAI.ChatCompletionMessageParam[] = [
+    { role: 'system' as const, content: system instanceof Function ? system() : system },
+    ...(systemSuffix ? [{ role: 'system' as const, content: systemSuffix }] : []),
+    ...messages,
+  ]
 
   let usageTotals = {
     input_tokens: 0,
     output_tokens: 0,
     cache_read_input_tokens: 0,
-    cache_creation_input_tokens: 0,
   }
 
   // rounds are API round trips, not conversational turns
   for (let round = 0; round < 30; round++) {
     rounds++
     onRoundStart?.()
-    const stream = client.messages.stream({
-      max_tokens: maxTokens,
-      model: model,
+
+    const response = await client.chat.completions.create({
       messages: conversation,
-      system: [
-        {
-          type: 'text',
-          text: system instanceof Function ? system() : system,
-          cache_control: { type: 'ephemeral' },
-        },
-        ...(systemSuffix ? [{ type: 'text' as const, text: systemSuffix }] : []),
-      ],
+      model: model,
+      max_tokens: maxTokens,
       tools: definitions,
-      ...(effort && { output_config: { effort } }),
+      ...(effort && { reasoning_effort: effort }),
+      tool_choice: 'auto',
     })
-    const response = await stream.finalMessage()
 
-    usageTotals.input_tokens = usageTotals.input_tokens + response.usage.input_tokens
-    usageTotals.output_tokens = usageTotals.output_tokens + response.usage.output_tokens
-    usageTotals.cache_read_input_tokens =
-      usageTotals.cache_read_input_tokens + (response.usage.cache_read_input_tokens ?? 0)
-    usageTotals.cache_creation_input_tokens =
-      usageTotals.cache_creation_input_tokens + (response.usage.cache_creation_input_tokens ?? 0)
+    usageTotals.input_tokens += response.usage?.prompt_tokens ?? 0
+    usageTotals.output_tokens += response.usage?.completion_tokens ?? 0
+    usageTotals.cache_read_input_tokens += response.usage?.prompt_tokens_details?.cached_tokens ?? 0
 
-    conversation.push({ role: 'assistant', content: response.content })
+    const msg = response.choices[0].message
+    const reasoningContent = 'reasoning_content' in msg ? msg.reasoning_content : undefined
 
-    const results: Anthropic.ToolResultBlockParam[] = []
+    conversation.push({ role: 'assistant', content: msg.content, tool_calls: msg.tool_calls })
 
-    // one message per utterance: a text block adds to the reply, anything else sends it
-    let said = ''
-    for (const part of response.content) {
-      if (part.type !== 'text' && said) {
-        await onText?.(said)
-        said = ''
+    if (reasoningContent) onThinking?.()
+    if (msg.content) await onText?.(msg.content)
+
+    const toolResults: OpenAI.ChatCompletionMessageParam[] = []
+
+    for (const toolCall of msg.tool_calls ?? []) {
+      if (toolCall.type !== 'function') {
+        log.warn({ toolCall }, 'Unexpected tool call type')
+        continue
       }
-      await match(part)
-        .with({ type: 'text' }, (p) => {
-          said += p.text
-        })
-        .with({ type: 'tool_use' }, async (p) => {
-          const outcome = await executeTool(tools, p, tainted)
-          await onToolUse?.(p, outcome)
-          results.push({
-            type: 'tool_result',
-            tool_use_id: p.id,
-            content: outcome.output,
-            ...(outcome.error && { is_error: true }),
-          })
-          tainted ||= outcome.tainted
-        })
-        .with({ type: 'thinking' }, () => {
-          onThinking?.()
-        })
-        .otherwise(() => {})
+      const outcome = await executeTool(tools, toolCall, tainted)
+      await onToolUse?.(toolCall, outcome)
+      toolResults.push({
+        tool_call_id: toolCall.id,
+        content: outcome.output,
+        role: 'tool',
+      })
+      tainted ||= outcome.tainted
     }
-    if (said) await onText?.(said)
 
-    if (response.stop_reason === 'pause_turn') continue
+    const stopReason = response.choices[0].finish_reason
 
-    if (response.stop_reason === 'max_tokens') {
+    if (stopReason === 'length') {
       log.warn({ maxTokens }, 'Hit max_tokens, output truncated')
       return {
         messages: conversation,
@@ -151,7 +125,7 @@ export async function turn(params: TurnParams): Promise<{
       }
     }
 
-    if (response.stop_reason !== 'tool_use') {
+    if (stopReason !== 'tool_calls') {
       return {
         messages: conversation,
         usage: usageTotals,
@@ -159,7 +133,7 @@ export async function turn(params: TurnParams): Promise<{
       }
     }
 
-    conversation.push({ role: 'user', content: results })
+    conversation.push(...toolResults)
   }
 
   return {
@@ -175,11 +149,8 @@ export async function verify(outcomes: ToolOutcome[], response: string): Promise
 }
 
 export async function listModelIds(): Promise<string[]> {
-  const ids = ['zai-org/GLM-5', 'zai-org/GLM-5.2', 'zai-org/GLM-5.3-Flash', 'moonshotai/Kimi-K2.6', 'Qwen/Qwen3.5-397B-A17B']
-  if (process.env.ANTHROPIC_API_KEY) {
-    for await (const model of new Anthropic().models.list({ limit: 1000 })) {
-      if (model.id.startsWith('claude-')) ids.push(model.id)
-    }
-  }
-  return ids
+  const res = await client.models.list()
+  return res.data
+    .filter((m: any) => m.metadata?.tags?.includes('chat'))
+    .map((m) => m.id)
 }

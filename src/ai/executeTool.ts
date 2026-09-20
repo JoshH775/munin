@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from './makeTool'
 import { log } from '../logger'
 import { dayjs } from '../time'
+import type OpenAI from 'openai'
 
 export type ToolOutcome = {
   output: string
@@ -12,23 +12,24 @@ export type ToolOutcome = {
 
 export async function executeTool(
   tools: Tool<any>[],
-  p: Anthropic.ToolUseBlock,
+  p: OpenAI.ChatCompletionMessageFunctionToolCall,
   tainted: boolean,
 ): Promise<ToolOutcome> {
+  const { name, arguments: toolArgs } = p.function
   const start = dayjs()
-  log.info({ tool: p.name, input: JSON.stringify(p.input).slice(0, 140) }, 'Tool call')
+  log.info({ tool: name, input: JSON.stringify(toolArgs).slice(0, 140) }, 'Tool call')
 
-  const tool = tools.find((t) => t.definition.name === p.name)
+  const tool = tools.find((t) => t.definition.function.name === name)
   if (!tool) {
-    log.warn({ tool: p.name }, 'Tool not found')
-    const error = `Tool not found: ${p.name}`
+    log.warn({ tool: name }, 'Tool not found')
+    const error = `Tool not found: ${name}`
     return { output: error, tainted: false, ms: dayjs().diff(start), error }
   }
 
   // Once the turn has read untrusted content, refuse any tool that can reach an
   // external destination for the rest of the turn.
   if (tool.arbitraryOutreach && tainted) {
-    log.warn({ tool: p.name }, 'Tool blocked by exfil guardrail')
+    log.warn({ tool: name }, 'Tool blocked by exfil guardrail')
     const error = 'Blocked by exfil guardrail'
     return {
       output:
@@ -40,12 +41,12 @@ export async function executeTool(
   }
 
   try {
-    const output = await tool.run(p.input)
-    log.info({ tool: p.name, ms: dayjs().diff(start), chars: output.length }, 'Tool ok')
+    const output = await tool.run(toolArgs)
+    log.info({ tool: name, ms: dayjs().diff(start), chars: output.length }, 'Tool ok')
     return { output, tainted: tool.readsUntrusted ?? false, ms: dayjs().diff(start), error: null }
   } catch (err) {
     const error = String(err)
-    log.warn({ tool: p.name, ms: dayjs().diff(start), err }, 'Tool failed')
+    log.warn({ tool: name, ms: dayjs().diff(start), err }, 'Tool failed')
     return { output: error, tainted: false, ms: dayjs().diff(start), error }
   }
 }

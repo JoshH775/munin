@@ -1,8 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
+import type OpenAI from 'openai'
 import { z } from 'zod'
 
 export interface Tool<TSchema extends z.ZodType> {
-  definition: Anthropic.Tool
+  definition: OpenAI.ChatCompletionFunctionTool
   label: (n: number) => string
   schema: TSchema
   run: (args: unknown) => Promise<string>
@@ -22,9 +22,12 @@ export function makeTool<TSchema extends z.ZodType>(params: {
   const { name, description, label, inputSchema, arbitraryOutreach, readsUntrusted } = params
   return {
     definition: {
-      name,
-      description,
-      input_schema: z.toJSONSchema(inputSchema) as Anthropic.Tool.InputSchema,
+     type: 'function',
+     function: {
+       name,
+       description,
+       parameters: inputSchema.toJSONSchema(), 
+     },
     },
     label,
     schema: inputSchema,

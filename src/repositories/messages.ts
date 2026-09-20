@@ -1,8 +1,8 @@
-import type Anthropic from '@anthropic-ai/sdk'
 import type { Insertable, Selectable } from 'kysely'
 import type { Dayjs } from 'dayjs'
 import { db } from '../db/index'
 import type { Messages } from '../db/types'
+import type OpenAI from 'openai'
 
 // Resolves true only when a row was actually written.
 export async function insertMessage(message: Insertable<Messages>): Promise<boolean> {
@@ -73,25 +73,15 @@ export async function getMessagesSince({
 export function toChatTranscript(
   messages: Selectable<Messages>[],
   botUserId: string,
-): Anthropic.MessageParam[] {
+): OpenAI.ChatCompletionMessageParam[] {
   const transcript = messages
     // 'tool'/'thinking' are munin's status lines; contentless rows are attachments and embeds
     .filter((m) => m.kind === 'chat' && m.content.trim())
-    .map((m): Anthropic.MessageParam => ({
+    .map((m): OpenAI.ChatCompletionMessageParam => ({
       role: m.user_id === botUserId ? 'assistant' : 'user',
       content: m.content,
     }))
-  // The API requires a user turn first, and a thread munin opened starts with its own message.
-  if (transcript[0]?.role === 'assistant') {
-    transcript.unshift({
-      role: 'user',
-      content: '(not from the user: munin opened this thread, nobody had spoken yet)',
-    })
-  }
-  const last = transcript.at(-1)
-  if (last && typeof last.content === 'string') {
-    last.content = [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }]
-  }
+
   return transcript
 }
 
