@@ -17,7 +17,7 @@ export async function executeTool(
 ): Promise<ToolOutcome> {
   const { name, arguments: toolArgs } = p.function
   const start = dayjs()
-  log.info({ tool: name, input: JSON.stringify(toolArgs).slice(0, 140) }, 'Tool call')
+  log.info({ tool: name, input: toolArgs.slice(0, 140) }, 'Tool call')
 
   const tool = tools.find((t) => t.definition.function.name === name)
   if (!tool) {
@@ -41,7 +41,8 @@ export async function executeTool(
   }
 
   try {
-    const output = await tool.run(toolArgs)
+    const parsed = JSON.parse(toolArgs)
+    const output = await tool.run(parsed)
     log.info({ tool: name, ms: dayjs().diff(start), chars: output.length }, 'Tool ok')
     return { output, tainted: tool.readsUntrusted ?? false, ms: dayjs().diff(start), error: null }
   } catch (err) {
