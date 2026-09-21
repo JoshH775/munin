@@ -45,7 +45,7 @@ export async function postToolBreadcrumb({
   used: Map<string, number>
 }): Promise<void> {
   if (used.size === 0 || !channel.isSendable()) return
-  const labelsMap = new Map(tools.map((t) => [t.definition.name, t.label]))
+  const labelsMap = new Map(tools.map((t) => [t.definition.function.name, t.label]))
   const body = `-# ${used
     .entries()
     .map(([name, count]) => {

@@ -164,17 +164,18 @@ export async function messageHandler(
         }
       },
       onToolUse: async (tool, outcome) => {
-        used.set(tool.name, (used.get(tool.name) ?? 0) + 1)
+        used.set(tool.function.name, (used.get(tool.function.name) ?? 0) + 1)
         outcomes.push(outcome)
         await insertToolLog({
           in_reply_to: message.id,
           channel_id: channelId,
-          tool: tool.name,
-          input: JSON.stringify(tool.input),
+          tool: tool.function.name,
+          input: tool.function.arguments,
           output: outcome.output,
           error: outcome.error,
+          ok: !outcome.error,
           duration_ms: outcome.ms,
-        }).catch((err) => log.error({ err, tool: tool.name }, 'Tool log insert failed'))
+        }).catch((err) => log.error({ err, tool: tool.function.name }, 'Tool log insert failed'))
       },
       tools,
     }).finally(stopTyping)
