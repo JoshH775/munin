@@ -87,7 +87,6 @@ export interface ToolLog {
 }
 
 export interface Usage {
-  cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
   created_at: Generated<import('dayjs').Dayjs>;
   effort: string;

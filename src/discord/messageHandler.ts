@@ -173,7 +173,6 @@ export async function messageHandler(
           input: tool.function.arguments,
           output: outcome.output,
           error: outcome.error,
-          ok: !outcome.error,
           duration_ms: outcome.ms,
         }).catch((err) => log.error({ err, tool: tool.function.name }, 'Tool log insert failed'))
       },
