@@ -43,7 +43,6 @@ export async function executeTool(
   try {
     const parsed = JSON.parse(toolArgs)
     const output = await tool.run(parsed)
-    log.info({ tool: name, ms: dayjs().diff(start), chars: output.length }, 'Tool ok')
     return { output, tainted: tool.readsUntrusted ?? false, ms: dayjs().diff(start), error: null }
   } catch (err) {
     const error = String(err)
