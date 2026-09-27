@@ -29,7 +29,7 @@ export function splitForDiscord(text: string): string[] {
     let cut = rest.lastIndexOf('\n', 2000)
     if (cut <= 0) cut = 2000
     parts.push(rest.slice(0, cut))
-    rest = `​\n${rest.slice(cut).replace(/^\n/, '')}`
+    rest = `\u200B\n${rest.slice(cut).replace(/^\n/, '')}`
   }
   if (rest) parts.push(rest)
   return parts
