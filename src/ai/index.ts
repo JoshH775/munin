@@ -1,4 +1,6 @@
 import 'dotenv/config'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import type { Tool } from './makeTool'
 import { executeTool, type ToolOutcome } from './executeTool'
 import { log } from '../logger'
@@ -10,6 +12,11 @@ const client = new OpenAI({
   apiKey: process.env.DEEPINFRA_API_KEY,
   baseURL: 'https://api.deepinfra.com/v1/openai',
 })
+
+const verifierSystem = readFileSync(
+  fileURLToPath(new URL('./verifier.md', import.meta.url)),
+  'utf8',
+).trim()
 
 export const efforts = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type Effort = (typeof efforts)[number]
@@ -194,12 +201,7 @@ export async function verify(outcomes: ToolOutcome[], response: string): Promise
       messages: [
         {
           role: 'system',
-          content:
-            'You check whether a response is supported by the tool outputs it was based on. ' +
-            'Flag only specific factual claims (prices, dates, distances, quantities, specs) that the tool ' +
-            'outputs do not contain. General knowledge, reasoning, and advice are fine, and any claim the ' +
-            'outputs do support is fine. Respond with JSON: { "passed": true } when every specific claim is ' +
-            'supported, or { "passed": false, "reason": "<the unsupported claim(s)>" } otherwise.',
+          content: verifierSystem,
         },
         {
           role: 'user',
