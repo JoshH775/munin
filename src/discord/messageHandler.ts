@@ -136,7 +136,6 @@ export async function messageHandler(
       effort: app.effort,
       system: persona,
       systemSuffix,
-      channelId,
       verify,
       onRoundStart: () => {
         stopTyping() // never stack two intervals across rounds

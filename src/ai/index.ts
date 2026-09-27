@@ -2,7 +2,6 @@ import 'dotenv/config'
 import type { Tool } from './makeTool'
 import { executeTool, type ToolOutcome } from './executeTool'
 import { log } from '../logger'
-import { searchToolLog } from '../repositories/toolLog'
 import OpenAI from 'openai'
 import z from 'zod'
 import { dayjs } from '../time'
@@ -31,7 +30,6 @@ export type TurnParams = {
   ) => void | Promise<void>
   onText?: (text: string) => void | Promise<void>
   onThinking?: () => void
-  channelId?: string
   verify?: (outcomes: ToolOutcome[], response: string) => Promise<boolean>
 }
 
@@ -57,7 +55,6 @@ export async function turn(params: TurnParams): Promise<{
     effort,
     system,
     systemSuffix,
-    channelId,
     verify,
   } = params
   const definitions = tools.map((t) => t.definition)
@@ -67,12 +64,6 @@ export async function turn(params: TurnParams): Promise<{
   let retried = false
   let temperature: number | undefined
   const outcomes: ToolOutcome[] = []
-  if (verify && channelId) {
-    const rows = await searchToolLog({ channelId })
-    for (const r of rows) {
-      outcomes.push({ output: r.output ?? '', tainted: false, ms: r.duration_ms, error: r.error })
-    }
-  }
 
   const conversation: OpenAI.ChatCompletionMessageParam[] = [
     { role: 'system' as const, content: system instanceof Function ? system() : system },
@@ -192,6 +183,7 @@ export async function verify(outcomes: ToolOutcome[], response: string): Promise
     .map((o) => o.output)
     .filter(Boolean)
     .join('\n\n---\n\n')
+  if (!outputs) return true
 
   const start = dayjs()
   try {
