@@ -210,9 +210,15 @@ export async function verify(outcomes: ToolOutcome[], response: string): Promise
       ],
     })
 
-    const content = VerifierSchema.parse(JSON.parse(res.choices[0].message.content ?? ''))
-    log.info({ passed: content.passed, reason: content.reason, ms: dayjs().diff(start) }, 'Verifier verdict')
-    return content.passed
+    const raw = res.choices[0].message.content ?? ''
+    const parsed = VerifierSchema.safeParse(JSON.parse(raw))
+    if (!parsed.success) {
+      log.warn({ raw: raw.slice(0, 300), ms: dayjs().diff(start) }, 'Verifier returned unexpected shape')
+      return true
+    }
+    const { passed, reason } = parsed.data
+    log.info({ passed, reason, ms: dayjs().diff(start) }, 'Verifier verdict')
+    return passed
   } catch (err) {
     log.error({ err, ms: dayjs().diff(start) }, 'Verifier failed')
     return true
