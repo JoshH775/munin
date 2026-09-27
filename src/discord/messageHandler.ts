@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Message, ChannelType, Client, type OmitPartialGroupDMChannel } from 'discord.js'
 import { turn, verify } from '../ai'
-import type { ToolOutcome } from '../ai/executeTool'
 import {
   updateChannelMemoryTool,
   updateGlobalMemoryTool,
@@ -31,7 +30,7 @@ import { resolveMemory } from '../repositories/memory'
 import { getAppSettings } from '../repositories/appSettings'
 import { insertMessage, getConversation, toChatTranscript } from '../repositories/messages'
 import { insertUsage } from '../repositories/usage'
-import { insertToolLog, searchToolLog } from '../repositories/toolLog'
+import { insertToolLog } from '../repositories/toolLog'
 import { findUrls } from '../urls'
 import { dayjs } from '../time'
 import { splitForDiscord, postToolBreadcrumb } from './utils'
@@ -65,14 +64,11 @@ export async function messageHandler(
 
     log.info({ channelId, parentChannelId, user: message.author.username }, 'Message received')
 
-    const [history, settings, memory, app, priorOutcomes] = await Promise.all([
+    const [history, settings, memory, app] = await Promise.all([
       getConversation({ channelId }),
       resolveSettings(channelId, parentChannelId),
       resolveMemory(channelId, parentChannelId),
       getAppSettings(),
-      searchToolLog({ channelId }).then((rows) =>
-        rows.map((r): ToolOutcome => ({ output: r.output ?? '', tainted: false, ms: r.duration_ms, error: r.error })),
-      ),
     ])
 
     if (!settings.enabled) {
@@ -125,7 +121,6 @@ export async function messageHandler(
     ]
       .filter(Boolean)
       .join('\n\n')
-    const outcomes: ToolOutcome[] = [...priorOutcomes]
     // Tools used since the last breadcrumb; postToolBreadcrumb posts and clears it.
     const used = new Map<string, number>()
     const turnStart = Date.now()
@@ -141,6 +136,8 @@ export async function messageHandler(
       effort: app.effort,
       system: persona,
       systemSuffix,
+      channelId,
+      verify,
       onRoundStart: () => {
         stopTyping() // never stack two intervals across rounds
         message.channel.sendTyping().catch(() => {})
@@ -153,8 +150,6 @@ export async function messageHandler(
           .replace(/^\s*---\s*$/gm, '') // drop horizontal rules
           .trim()
         if (!tidy) return
-        const passed = await verify(outcomes, tidy)
-        if (!passed) log.warn({ channelId }, 'Verifier flagged response')
         const parts = splitForDiscord(tidy)
         if (parts.length > 1) {
           log.info({ channelId, parts: parts.length }, 'Reply split across messages')
@@ -165,7 +160,6 @@ export async function messageHandler(
       },
       onToolUse: async (tool, outcome) => {
         used.set(tool.function.name, (used.get(tool.function.name) ?? 0) + 1)
-        outcomes.push(outcome)
         await insertToolLog({
           in_reply_to: message.id,
           channel_id: channelId,
