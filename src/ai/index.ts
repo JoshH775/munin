@@ -33,7 +33,6 @@ export type TurnParams = {
   onThinking?: () => void
   channelId?: string
   verify?: (outcomes: ToolOutcome[], response: string) => Promise<boolean>
-  isRetry?: boolean
 }
 
 export async function turn(params: TurnParams): Promise<{
@@ -60,12 +59,13 @@ export async function turn(params: TurnParams): Promise<{
     systemSuffix,
     channelId,
     verify,
-    isRetry = false,
   } = params
   const definitions = tools.map((t) => t.definition)
 
   let rounds = 0
   let tainted = false
+  let retried = false
+  let temperature: number | undefined
   const outcomes: ToolOutcome[] = []
   if (verify && channelId) {
     const rows = await searchToolLog({ channelId })
@@ -97,7 +97,7 @@ export async function turn(params: TurnParams): Promise<{
       max_tokens: maxTokens,
       tools: definitions,
       ...(effort && { reasoning_effort: effort }),
-      temperature: isRetry ? 1.3 : undefined,
+      ...(temperature != null && { temperature }),
       tool_choice: 'auto',
     })
 
@@ -117,20 +117,13 @@ export async function turn(params: TurnParams): Promise<{
     if (msg.content) {
       const terminal = stopReason !== 'tool_calls'
       const flagged = terminal && verify != null && !(await verify(outcomes, msg.content))
-      if (flagged && !isRetry) {
-        log.warn({ model }, 'Verifier flagged response, retrying with temperature bump')
-        const retry = await turn({ ...params, isRetry: true })
-        return {
-          messages: retry.messages,
-          usage: {
-            input_tokens: usageTotals.input_tokens + retry.usage.input_tokens,
-            output_tokens: usageTotals.output_tokens + retry.usage.output_tokens,
-            cache_read_input_tokens:
-              usageTotals.cache_read_input_tokens + retry.usage.cache_read_input_tokens,
-          },
-          rounds: rounds + retry.rounds,
-          truncated: retry.truncated,
-        }
+      if (flagged && !retried) {
+        // Regenerate from the tool results already gathered, hotter, without re-running tools.
+        log.warn({ model }, 'Verifier flagged response, regenerating at higher temperature')
+        retried = true
+        temperature = 1.3
+        conversation.pop()
+        continue
       }
       if (flagged) {
         log.warn({ model }, 'Verifier flagged retry, sending with caveat')
