@@ -2,7 +2,10 @@ import 'dotenv/config'
 import type { Tool } from './makeTool'
 import { executeTool, type ToolOutcome } from './executeTool'
 import { log } from '../logger'
+import { searchToolLog } from '../repositories/toolLog'
 import OpenAI from 'openai'
+import z from 'zod'
+import { dayjs } from '../time'
 
 const client = new OpenAI({
   apiKey: process.env.DEEPINFRA_API_KEY,
@@ -28,6 +31,9 @@ export type TurnParams = {
   ) => void | Promise<void>
   onText?: (text: string) => void | Promise<void>
   onThinking?: () => void
+  channelId?: string
+  verify?: (outcomes: ToolOutcome[], response: string) => Promise<boolean>
+  isRetry?: boolean
 }
 
 export async function turn(params: TurnParams): Promise<{
@@ -52,11 +58,21 @@ export async function turn(params: TurnParams): Promise<{
     effort,
     system,
     systemSuffix,
+    channelId,
+    verify,
+    isRetry = false,
   } = params
   const definitions = tools.map((t) => t.definition)
 
   let rounds = 0
   let tainted = false
+  const outcomes: ToolOutcome[] = []
+  if (verify && channelId) {
+    const rows = await searchToolLog({ channelId })
+    for (const r of rows) {
+      outcomes.push({ output: r.output ?? '', tainted: false, ms: r.duration_ms, error: r.error })
+    }
+  }
 
   const conversation: OpenAI.ChatCompletionMessageParam[] = [
     { role: 'system' as const, content: system instanceof Function ? system() : system },
@@ -81,6 +97,7 @@ export async function turn(params: TurnParams): Promise<{
       max_tokens: maxTokens,
       tools: definitions,
       ...(effort && { reasoning_effort: effort }),
+      temperature: isRetry ? 1.3 : undefined,
       tool_choice: 'auto',
     })
 
@@ -94,7 +111,37 @@ export async function turn(params: TurnParams): Promise<{
     conversation.push({ role: 'assistant', content: msg.content, tool_calls: msg.tool_calls })
 
     if (reasoningContent) onThinking?.()
-    if (msg.content) await onText?.(msg.content)
+
+    const stopReason = response.choices[0].finish_reason
+
+    if (msg.content) {
+      const terminal = stopReason !== 'tool_calls'
+      const flagged = terminal && verify != null && !(await verify(outcomes, msg.content))
+      if (flagged && !isRetry) {
+        log.warn({ model }, 'Verifier flagged response, retrying with temperature bump')
+        const retry = await turn({ ...params, isRetry: true })
+        return {
+          messages: retry.messages,
+          usage: {
+            input_tokens: usageTotals.input_tokens + retry.usage.input_tokens,
+            output_tokens: usageTotals.output_tokens + retry.usage.output_tokens,
+            cache_read_input_tokens:
+              usageTotals.cache_read_input_tokens + retry.usage.cache_read_input_tokens,
+          },
+          rounds: rounds + retry.rounds,
+          truncated: retry.truncated,
+        }
+      }
+      if (flagged) {
+        log.warn({ model }, 'Verifier flagged retry, sending with caveat')
+        await onText?.(
+          msg.content +
+            "\n\n-# Couldn't verify the specifics above against my sources, so treat the exact figures with caution.",
+        )
+      } else {
+        await onText?.(msg.content)
+      }
+    }
 
     const toolResults: OpenAI.ChatCompletionMessageParam[] = []
 
@@ -105,6 +152,7 @@ export async function turn(params: TurnParams): Promise<{
       }
       const outcome = await executeTool(tools, toolCall, tainted)
       await onToolUse?.(toolCall, outcome)
+      outcomes.push(outcome)
       toolResults.push({
         tool_call_id: toolCall.id,
         content: outcome.output,
@@ -112,8 +160,6 @@ export async function turn(params: TurnParams): Promise<{
       })
       tainted ||= outcome.tainted
     }
-
-    const stopReason = response.choices[0].finish_reason
 
     if (stopReason === 'length') {
       log.warn({ maxTokens }, 'Hit max_tokens, output truncated')
@@ -144,8 +190,46 @@ export async function turn(params: TurnParams): Promise<{
 }
 
 export async function verify(outcomes: ToolOutcome[], response: string): Promise<boolean> {
-  log.debug({ outcomes: outcomes.length, chars: response.length }, 'Verify stub')
-  return true
+  const VerifierSchema = z.object({
+    passed: z.boolean(),
+    reason: z.string().optional(),
+  })
+
+  const outputs = outcomes
+    .map((o) => o.output)
+    .filter(Boolean)
+    .join('\n\n---\n\n')
+
+  const start = dayjs()
+  try {
+    const res = await client.chat.completions.create({
+      model: 'deepseek-ai/DeepSeek-V4-Flash-0731',
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You check whether a response is supported by the tool outputs it was based on. ' +
+            'Flag only specific factual claims (prices, dates, distances, quantities, specs) that the tool ' +
+            'outputs do not contain. General knowledge, reasoning, and advice are fine, and any claim the ' +
+            'outputs do support is fine. Respond with JSON: { "passed": true } when every specific claim is ' +
+            'supported, or { "passed": false, "reason": "<the unsupported claim(s)>" } otherwise.',
+        },
+        {
+          role: 'user',
+          content: `<tool_outputs>\n${outputs}\n</tool_outputs>\n\n<response>\n${response}\n</response>`,
+        },
+      ],
+    })
+
+    const content = VerifierSchema.parse(JSON.parse(res.choices[0].message.content ?? ''))
+    log.info({ passed: content.passed, reason: content.reason, ms: dayjs().diff(start) }, 'Verifier verdict')
+    return content.passed
+  } catch (err) {
+    log.error({ err, ms: dayjs().diff(start) }, 'Verifier failed')
+    return true
+  }
 }
 
 export async function listModelIds(): Promise<string[]> {
