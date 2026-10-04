@@ -3,9 +3,6 @@ import { fileURLToPath } from 'node:url'
 import { Message, ChannelType, Client, type OmitPartialGroupDMChannel } from 'discord.js'
 import { turn, verify } from '../ai'
 import {
-  updateChannelMemoryTool,
-  updateGlobalMemoryTool,
-  readMemoryTool,
   tavilySearchTool,
   tavilyExtractTool,
   createReminderTool,
@@ -84,8 +81,6 @@ export async function messageHandler(
     }
     const tools = [
       // ephemeral channels are throwaway: no memory tools, so nothing here is remembered
-      ...(settings.ephemeral ? [] : [updateChannelMemoryTool(), updateGlobalMemoryTool()]),
-      readMemoryTool(),
       tavilySearchTool(trustedUrls),
       tavilyExtractTool(trustedUrls),
       createReminderTool(client, message.author.id),
