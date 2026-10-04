@@ -1,18 +1,22 @@
 import { sql } from 'kysely'
+import type { Dayjs } from 'dayjs'
 import { db } from '../db'
+import type z from 'zod'
+import type { SweeperSchema } from '../ai'
 
 // The tiered memory block for a channel: global + parent channel + this channel/thread, labelled.
 export async function resolveMemory(
   channelId: string,
   parentChannelId: string | null,
 ): Promise<string> {
-  const ids = [channelId, parentChannelId, 'global'].filter((id): id is string => id !== null)
-  const rows = await db.selectFrom('memory').selectAll().where('channel_id', 'in', ids).execute()
+  const ids = [channelId, parentChannelId].filter((id): id is string => id !== null)
+  const memories = await db.selectFrom('memory').selectAll().where('channel_id', 'in', ids).execute()
+  const global = await db.selectFrom('global_memory').selectAll().executeTakeFirst()
 
-  const global = rows.find((r) => r.channel_id === 'global')
-  const parent = parentChannelId ? rows.find((r) => r.channel_id === parentChannelId) : undefined
-  const own = rows.find((r) => r.channel_id === channelId && r.channel_id !== 'global')
+  const parent = parentChannelId ? memories.find((m) => m.channel_id === parentChannelId) : undefined
+  const own = memories.find((m) => m.channel_id === channelId)
 
+  // fix the rendering
   return [
     global?.content.trim() && `# Global memory\n${global.content.trim()}`,
     parent?.content.trim() && `# Channel memory\n${parent.content.trim()}`,
@@ -32,26 +36,26 @@ export async function getMemory(channelId: string): Promise<string | null> {
   return row?.content ?? null
 }
 
-export async function updateMemory({
-  channelId,
-  memory,
-}: {
-  channelId: string
-  memory: string
-}): Promise<void> {
-  // memory.channel_id references channel_settings, so ensure a settings row exists first.
-  await db
-    .insertInto('channel_settings')
-    .values({ channel_id: channelId })
-    .onConflict((oc) => oc.doNothing())
-    .execute()
-  await db
-    .insertInto('memory')
-    .values({ channel_id: channelId, content: memory, as_of: sql`now()` })
-    .onConflict((oc) =>
-      oc
-        .column('channel_id')
-        .doUpdateSet({ content: memory, as_of: sql`now()`, updated_at: sql`now()` }),
-    )
-    .execute()
+// One sweep's result as one transaction: the watermark, and the doc when it changed.
+export async function writeMemorySweep(
+  channelId: string,
+  sweptTo: Dayjs,
+  { memory, description }: z.infer<typeof SweeperSchema>,
+): Promise<void> {
+  await db.transaction().execute(async (trx) => {
+    // memory references the settings row, so it goes in first
+    await trx
+      .insertInto('channel_settings')
+      .values({ channel_id: channelId, last_memory_sweep_at: sweptTo })
+      .onConflict((oc) => oc.column('channel_id').doUpdateSet({ last_memory_sweep_at: sweptTo }))
+      .execute()
+    if (!memory) return
+    await trx
+      .insertInto('memory')
+      .values({ channel_id: channelId, content: memory, description })
+      .onConflict((oc) =>
+        oc.column('channel_id').doUpdateSet({ content: memory, description, updated_at: sql`now()` }),
+      )
+      .execute()
+  })
 }
