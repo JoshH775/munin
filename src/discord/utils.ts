@@ -1,11 +1,7 @@
 import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   Collection,
   type AnyThreadChannel,
   type Channel,
-  type Client,
   type ForumChannel,
   type Guild,
   type GuildMember,
@@ -14,12 +10,7 @@ import {
   type NewsChannel,
   type TextChannel,
 } from 'discord.js'
-import { listEphemeralChannelIds } from '../repositories/channelSettings'
-import { deleteMessages, getLatestMessage } from '../repositories/messages'
-import { getDueReminders, markReminderSent } from '../repositories/reminders'
 import type { Tool } from '../ai/makeTool'
-import { log } from '../logger'
-import { dayjs } from '../time'
 
 // Chunk text to fit Discord's 2000-char message limit, breaking on newlines where possible.
 export function splitForDiscord(text: string): string[] {
@@ -95,65 +86,6 @@ export async function fetchAllMessages(
   return messages
 }
 
-export async function sweepEphemeral(client: Client): Promise<void> {
-  for (const channelId of await listEphemeralChannelIds()) {
-    const last = await getLatestMessage(channelId)
-    if (!last) continue
-    if (dayjs().diff(last.sent_at) < 45 * 60_000) continue
-    const channel = await client.channels.fetch(channelId).catch(() => null)
-    if (!channel || !channel.isTextBased() || channel.isDMBased()) continue
-    const deleted = await channel.bulkDelete(100, true)
-    if (deleted.size > 0) {
-      await deleteMessages([...deleted.keys()])
-      log.info({ channelId, cleared: deleted.size }, 'Swept ephemeral channel')
-    }
-  }
-}
-
-export async function dispatchReminders(client: Client): Promise<void> {
-  const due = await getDueReminders()
-  if (due.length === 0) return
-
-  for (const reminder of due) {
-    const targetChannelId = reminder.channel_id
-    if (!targetChannelId) {
-      log.warn({ reminderId: reminder.id }, 'Reminder has no channel')
-      continue
-    }
-    const channel = await client.channels.fetch(targetChannelId).catch(() => null)
-    if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-      log.warn({ reminderId: reminder.id, targetChannelId }, 'Reminder channel unavailable')
-      continue
-    }
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`reminder_ack:${reminder.id}`)
-        .setLabel('Got it')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`reminder_snooze_5min:${reminder.id}`)
-        .setLabel('Snooze 5 min')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`reminder_snooze_1hr:${reminder.id}`)
-        .setLabel('Snooze 1 hour')
-        .setStyle(ButtonStyle.Secondary),
-    )
-    try {
-      // Flat text, not an embed: push notifications show `content` and would otherwise be blank.
-      await channel.send({
-        content: `⏰ **Reminder**\n${reminder.content}${reminder.target ? `\n<@${reminder.target}>` : ''}`,
-        components: [row],
-      })
-      await markReminderSent(reminder.id)
-      log.info({ reminderId: reminder.id }, 'Reminder delivered')
-    } catch (err) {
-      // Leave it pending so the next poll retries; don't mark sent on failure.
-      log.error({ err, reminderId: reminder.id }, 'Reminder delivery failed')
-    }
-  }
-}
-
 // Every human member of a guild. Needs the GuildMembers privileged intent.
 export async function fetchNonBotUsers(guild: Guild): Promise<GuildMember[]> {
   const members = await guild.members.fetch()
@@ -198,15 +130,3 @@ export async function getAllThreads(guild: Guild): Promise<AnyThreadChannel[]> {
 
   return [...byId.values()]
 }
-
-// export async function sweepMemory(client: Client, guild: Guild): Promise<void> {
-//   const allChannels = (await guild.channels.fetch())
-//     .values()
-//     .filter((c): c is TextChannel => c?.type === ChannelType.GuildText)
-//   const sweepChannels = [...allChannels].filter(async (c) => {
-//     if (!c) return false
-//     if (!c.messages.cache.values().some((m) => m.author.id === client.user?.id)) return false
-//     const latest = await getLatestMessage(c.id)
-//     if (!latest || dayjs().diff(latest.sent_at) < 5 * 60_000) return false
-//   })
-// }
