@@ -1,8 +1,11 @@
 import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import type { Selectable } from 'kysely'
 import type { Tool } from './makeTool'
 import { executeTool, type ToolOutcome } from './executeTool'
+import type { Messages } from '../db/types'
+import { insertUsage } from '../repositories/usage'
 import { log } from '../logger'
 import OpenAI from 'openai'
 import z from 'zod'
@@ -15,6 +18,11 @@ const client = new OpenAI({
 
 const verifierSystem = readFileSync(
   fileURLToPath(new URL('./verifier.md', import.meta.url)),
+  'utf8',
+).trim()
+
+const sweepSystem = readFileSync(
+  fileURLToPath(new URL('./sweep.md', import.meta.url)),
   'utf8',
 ).trim()
 
@@ -230,4 +238,69 @@ export async function listModelIds(): Promise<string[]> {
   return res.data
     .filter((m: any) => m.metadata?.tags?.includes('chat'))
     .map((m) => m.id)
+}
+
+export const SweeperSchema = z.object({
+memory: z.string().nullable(),
+description: z.string().nullable(),
+})
+
+export async function sweepMemory(opts: { channelName: string, messages: Selectable<Messages>[], doc: string, isRetry?: boolean }) {
+  const { messages, channelName, doc, isRetry = false } = opts
+
+  const transcript = messages
+  .map((m) => `[${m.sent_at.tz().format('YYYY-MM-DD HH:mm')}] ${m.user_name}: ${m.content}`)
+  .join('\n')
+
+  const start = dayjs()
+
+  try {
+    const res = await client.chat.completions.create({
+      model: 'zai-org/GLM-5.2',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: sweepSystem },
+        {
+          role: 'user',
+          content: [
+            `Channel: ${channelName}`,
+            `Now: ${dayjs().tz().format('dddd D MMMM YYYY HH:mm')}, London time.`,
+            `<memory>\n${doc?.trim() || '(empty)'}\n</memory>`,
+            `<messages>\n${transcript}\n</messages>`,
+          ].join('\n\n'),
+        },
+      ],
+    })
+    await insertUsage({
+      in_reply_to: null,
+      model: 'zai-org/GLM-5.2',
+      effort: 'default',
+      input_tokens: res.usage?.prompt_tokens ?? 0,
+      output_tokens: res.usage?.completion_tokens ?? 0,
+      cache_read_input_tokens: res.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+    })
+
+    const raw = res.choices[0].message.content ?? ''
+    const parsed = SweeperSchema.safeParse(JSON.parse(raw))
+    if (!parsed.success) {
+      log.warn({ raw: raw.slice(0, 300), ms: dayjs().diff(start) }, 'Sweeper returned unexpected shape')
+      throw new Error('Sweeper returned unexpected shape')
+    }
+
+    return {
+      memory: parsed.data.memory,
+      description: parsed.data.description,
+    }
+  } catch (err) {
+    log.error({ err, ms: dayjs().diff(start) }, 'Sweeper failed')
+    if (!isRetry) {
+      log.info({ channelName }, 'Retrying sweeper')
+      return sweepMemory({ ...opts, isRetry: true })
+    }
+    throw err
+  }
+    
+      
+
+
 }
