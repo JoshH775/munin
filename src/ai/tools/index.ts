@@ -1,5 +1,4 @@
 export { tavilySearchTool, tavilyExtractTool } from './tavily'
-export { updateChannelMemoryTool, updateGlobalMemoryTool, readMemoryTool } from './memory'
 export { createReminderTool, deleteReminderTool, listRemindersTool } from './reminders'
 export {
   channelTreeTool,
