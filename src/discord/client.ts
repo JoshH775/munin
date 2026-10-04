@@ -7,89 +7,78 @@ import {
   updateMessageContent,
 } from '../repositories/messages'
 import { deleteSettings } from '../repositories/channelSettings'
-import { fetchAllMessages, getAllThreads, sweepEphemeral, dispatchReminders } from './utils'
+import { fetchAllMessages, getAllThreads } from './utils'
 import { log } from '../logger'
 import { dayjs } from '../time'
 import { registerCommands } from './commands'
-import { Cron } from 'croner'
 import { interactionHandler } from './interactionHandler'
 import { messageHandler } from './messageHandler'
 
-const token = process.env.DISCORD_BOT_TOKEN
-if (!token) {
-  throw Error('Discord bot env vars not setup properly')
+// Logs in, registers commands and backfills; resolves once the bot is ready to take messages.
+export async function setupClient(): Promise<Client> {
+  const token = process.env.DISCORD_BOT_TOKEN
+  if (!token) throw Error('Discord bot env vars not setup properly')
+
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+    ],
+    // partials so delete events fire for messages not in the cache (older ones)
+    partials: [Partials.Message, Partials.Channel],
+  })
+
+  let ready = false
+
+  client.on(Events.MessageCreate, async (message) => {
+    if (ready) messageHandler(client, message)
+  })
+
+  client.on(Events.MessageUpdate, async (old, updated) => {
+    if (old.content !== null && old.content === updated.content) return // unfurl or pin, not an edit
+    const message = updated.partial ? await updated.fetch().catch(() => null) : updated
+    if (!message?.content.trim()) return
+    log.info({ id: message.id }, 'Message edited')
+    await updateMessageContent(message.id, message.content)
+  })
+
+  client.on(Events.MessageDelete, (message) => {
+    log.info({ id: message.id }, 'Message deleted')
+    deleteMessages([message.id])
+  })
+
+  client.on(Events.MessageBulkDelete, (messages) => {
+    log.info({ count: messages.size }, 'Bulk delete')
+    deleteMessages([...messages.keys()])
+  })
+
+  client.on(Events.ThreadDelete, async (thread) => {
+    log.info({ threadId: thread.id }, 'Thread deleted')
+    await deleteChannelMessages(thread.id)
+    await deleteSettings([thread.id])
+  })
+
+  client.on(Events.ChannelDelete, async (channel) => {
+    log.info({ channelId: channel.id }, 'Channel deleted')
+    await deleteChannelMessages(channel.id)
+    await deleteSettings([channel.id])
+  })
+
+  client.on(Events.InteractionCreate, async (interaction) => interactionHandler(interaction))
+
+  const loggedIn = new Promise<void>((resolve) => client.once(Events.ClientReady, () => resolve()))
+  await client.login(token)
+  await loggedIn
+  log.info({ tag: client.user!.tag }, 'Logged in')
+  await registerCommands(client)
+  await backfill(client)
+  ready = true
+  return client
 }
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-  // partials so delete events fire for messages not in the cache (older ones)
-  partials: [Partials.Message, Partials.Channel],
-})
-
-client.login(token)
-
-let ready = false
-
-client.on(Events.MessageCreate, async (message) => {
-  if (ready) messageHandler(client, message)
-})
-
-client.on(Events.MessageUpdate, async (old, updated) => {
-  if (old.content !== null && old.content === updated.content) return // unfurl or pin, not an edit
-  const message = updated.partial ? await updated.fetch().catch(() => null) : updated
-  if (!message?.content.trim()) return
-  log.info({ id: message.id }, 'Message edited')
-  await updateMessageContent(message.id, message.content)
-})
-
-client.on(Events.MessageDelete, (message) => {
-  log.info({ id: message.id }, 'Message deleted')
-  deleteMessages([message.id])
-})
-
-client.on(Events.MessageBulkDelete, (messages) => {
-  log.info({ count: messages.size }, 'Bulk delete')
-  deleteMessages([...messages.keys()])
-})
-
-client.on(Events.ThreadDelete, async (thread) => {
-  log.info({ threadId: thread.id }, 'Thread deleted')
-  await deleteChannelMessages(thread.id)
-  await deleteSettings([thread.id])
-})
-
-client.on(Events.ChannelDelete, async (channel) => {
-  log.info({ channelId: channel.id }, 'Channel deleted')
-  await deleteChannelMessages(channel.id)
-  await deleteSettings([channel.id])
-})
-
-client.on(Events.InteractionCreate, async (interaction) => interactionHandler(interaction))
-
-client.once(Events.ClientReady, async (c) => {
-  log.info({ tag: c.user.tag }, 'Logged in')
-  try {
-    await registerCommands(client)
-    await backfill()
-    ready = true
-    new Cron('* * * * *', { catch: (err) => log.error({ err }, 'Ephemeral sweep failed') }, () =>
-      sweepEphemeral(client),
-    )
-    new Cron('* * * * *', { catch: (err) => log.error({ err }, 'Reminder dispatch failed') }, () =>
-      dispatchReminders(client),
-    )
-  } catch (err) {
-    log.fatal({ err }, 'Startup failed, exiting')
-    process.exit(1)
-  }
-})
-
-async function backfill(): Promise<void> {
+async function backfill(client: Client): Promise<void> {
   log.info('Backfilling messages')
   const start = Date.now()
   const backfillJobs: Promise<void>[] = []
