@@ -1,5 +1,6 @@
 import { sql } from 'kysely'
 import { db } from '../db'
+import type { Dayjs } from 'dayjs'
 
 export type ChannelSettings = {
   enabled: boolean
@@ -24,6 +25,11 @@ export async function resolveSettings(
     enabled: !own?.muted,
     ephemeral: !!(own?.ephemeral || parent?.ephemeral),
   }
+}
+
+export async function getLastMemorySweep(channelId: string): Promise<Dayjs | null> {
+  const row = await db.selectFrom('channel_settings').select('last_memory_sweep_at').where('channel_id', '=', channelId).executeTakeFirst()
+  return row?.last_memory_sweep_at ?? null
 }
 
 // set (not toggle) the mute for a channel. /mute passes true, /unmute passes false.
