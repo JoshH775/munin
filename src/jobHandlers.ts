@@ -79,7 +79,7 @@ export async function dispatchReminders(client: Client): Promise<void> {
 // channels whose sweep failed, and when to try again; the watermark stays put so nothing is lost
 const sweepRetryAfter = new Map<string, Dayjs>()
 
-export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void> {
+export async function sweepMemoryJob(client: Client, guild: Guild, remaining: number | undefined = undefined): Promise<void> {
   const channels = (await guild.channels.fetch())
     .values()
     .filter((c): c is TextChannel => !!c && c.isTextBased() && !c.isDMBased())
@@ -110,7 +110,7 @@ export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void
       joshId: guild.ownerId,
     })
 
-    log.info({ channelId: c.id, channelName: c.name }, 'Memory sweep completed')
+    log.info({ channelId: c.id, channelName: c.name, remaining }, 'Memory sweep completed')
     await writeMemorySweep(c.id, conversation[conversation.length - 1].sent_at, sweepOutput)
     sweepRetryAfter.delete(c.id)
     }
