@@ -18,10 +18,6 @@ new Cron(
   '* * * * *',
   { protect: true, catch: (err) => log.error({ err }, 'Memory sweep failed') },
   async () => {
-    const guilds = [...client.guilds.cache.values()]
-    for (let i = 0; i < guilds.length; i++) {
-      const guild = guilds[i]
-      await sweepMemoryJob(client, guild, guilds.length - i)
-    }
+    for (const guild of client.guilds.cache.values()) await sweepMemoryJob(client, guild)
   },
 )

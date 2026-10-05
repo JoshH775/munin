@@ -79,14 +79,12 @@ export async function dispatchReminders(client: Client): Promise<void> {
 // channels whose sweep failed, and when to try again; the watermark stays put so nothing is lost
 const sweepRetryAfter = new Map<string, Dayjs>()
 
-export async function sweepMemoryJob(client: Client, guild: Guild, remaining: number | undefined = undefined): Promise<void> {
-  const channels = (await guild.channels.fetch())
-    .values()
-    .filter((c): c is TextChannel => !!c && c.isTextBased() && !c.isDMBased())
-  const threads = (await getAllThreads(guild)).filter((t): t is TextThreadChannel => !!t && t.isTextBased() && !t.isDMBased())
+export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void> {
+  let remaining = 0 // channels not yet checked this run, for the log
 
-  for (const c of [...channels, ...threads]) {
-    if (sweepRetryAfter.get(c.id)?.isAfter(dayjs())) continue
+  const sweepChannel = async (c: TextChannel | TextThreadChannel) => {
+    remaining--
+    if (sweepRetryAfter.get(c.id)?.isAfter(dayjs())) return
     try {
       const [doc, lastSweptAt] = await Promise.all([
       getMemory(c.id),
@@ -98,9 +96,9 @@ export async function sweepMemoryJob(client: Client, guild: Guild, remaining: nu
       .filter((m) => lastSweptAt === null || m.sent_at.isAfter(lastSweptAt))
     const lastMessage = conversation[conversation.length - 1]
 
-    if (conversation.length === 0) continue // nothing new to sweep
-    if (!lastMessage.sent_at.isBefore(dayjs().subtract(30, 'minutes'))) continue // still active
-    if (!conversation.some((m) => m.user_id === client.user?.id)) continue // munin hasn't spoken here
+    if (conversation.length === 0) return // nothing new to sweep
+    if (!lastMessage.sent_at.isBefore(dayjs().subtract(30, 'minutes'))) return // still active
+    if (!conversation.some((m) => m.user_id === client.user?.id)) return // munin hasn't spoken here
 
     const sweepOutput = await sweepMemory({
       channelName: c.name,
@@ -118,6 +116,17 @@ export async function sweepMemoryJob(client: Client, guild: Guild, remaining: nu
     sweepRetryAfter.set(c.id, dayjs().add(1, 'hour'))
     log.error({ err, channelId: c.id, channelName: c.name }, 'Memory sweep failed, retrying in an hour')
   }
-    
+  }
+
+  const channels = (await guild.channels.fetch())
+    .values()
+    .filter((c): c is TextChannel => !!c && c.isTextBased() && !c.isDMBased())
+  const threads = (await getAllThreads(guild)).filter((t): t is TextThreadChannel => !!t && t.isTextBased() && !t.isDMBased())
+
+  const targets = [...channels, ...threads]
+  remaining = targets.length
+  for (let i = 0; i < targets.length; i+=5) {
+    const batch = targets.slice(i, i + 5)
+    await Promise.all(batch.map(sweepChannel))
   }
 }
