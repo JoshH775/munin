@@ -240,18 +240,23 @@ export async function listModelIds(): Promise<string[]> {
     .map((m) => m.id)
 }
 
-export async function sweepMemory(opts: { channelName: string, messages: Selectable<Messages>[], doc: string, isRetry?: boolean }) {
-  const { messages, channelName, doc, isRetry = false } = opts
+export async function sweepMemory(opts: { channelName: string, messages: Selectable<Messages>[], doc: string, muninId: string, joshId: string, isRetry?: boolean }) {
+  const { messages, channelName, doc, muninId, joshId, isRetry = false } = opts
+  // cheap model first; a malformed reply retries once on the stronger one
+  const model = isRetry ? 'zai-org/GLM-5.2' : 'XiaomiMiMo/MiMo-V2.6-Flash'
+  const speaker = (m: Selectable<Messages>) =>
+    m.user_id === muninId ? 'Munin' : m.user_id === joshId ? 'Josh' : m.user_name
 
   const transcript = messages
-  .map((m) => `[${m.sent_at.tz().format('YYYY-MM-DD HH:mm')}] ${m.user_name}: ${m.content}`)
+  .map((m) => `[${m.sent_at.tz().format('YYYY-MM-DD HH:mm')}] ${speaker(m)}: ${m.content}`)
   .join('\n')
 
   const start = dayjs()
 
   try {
     const res = await client.chat.completions.create({
-      model: 'deepseek-ai/DeepSeek-V4-Flash-0731',
+      model,
+      max_tokens: 16000,
       messages: [
         { role: 'system', content: sweepSystem },
         {
@@ -267,7 +272,7 @@ export async function sweepMemory(opts: { channelName: string, messages: Selecta
     })
     await insertUsage({
       in_reply_to: null,
-      model: 'deepseek-ai/DeepSeek-V4-Flash-0731',
+      model,
       effort: 'default',
       input_tokens: res.usage?.prompt_tokens ?? 0,
       output_tokens: res.usage?.completion_tokens ?? 0,
@@ -287,7 +292,7 @@ export async function sweepMemory(opts: { channelName: string, messages: Selecta
   } catch (err) {
     log.error({ err, ms: dayjs().diff(start) }, 'Sweeper failed')
     if (!isRetry) {
-      log.info({ channelName }, 'Retrying sweeper')
+      log.info({ channelName }, 'Retrying sweeper on GLM-5.2')
       return sweepMemory({ ...opts, isRetry: true })
     }
     throw err

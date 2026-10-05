@@ -12,6 +12,7 @@ import { deleteMessages, getConversation, getLatestMessage } from './repositorie
 import { getDueReminders, markReminderSent } from './repositories/reminders'
 import { log } from './logger'
 import { dayjs } from './time'
+import type { Dayjs } from 'dayjs'
 import { getMemory, writeMemorySweep } from './repositories/memory'
 import { sweepMemory } from './ai'
 import { getAllThreads } from './discord/utils'
@@ -75,6 +76,9 @@ export async function dispatchReminders(client: Client): Promise<void> {
   }
 }
 
+// channels whose sweep failed, and when to try again; the watermark stays put so nothing is lost
+const sweepRetryAfter = new Map<string, Dayjs>()
+
 export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void> {
   const channels = (await guild.channels.fetch())
     .values()
@@ -82,6 +86,7 @@ export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void
   const threads = (await getAllThreads(guild)).filter((t): t is TextThreadChannel => !!t && t.isTextBased() && !t.isDMBased())
 
   for (const c of [...channels, ...threads]) {
+    if (sweepRetryAfter.get(c.id)?.isAfter(dayjs())) continue
     try {
       const [doc, lastSweptAt] = await Promise.all([
       getMemory(c.id),
@@ -101,13 +106,17 @@ export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void
       channelName: c.name,
       messages: conversation,
       doc: doc ?? '',
+      muninId: client.user!.id,
+      joshId: guild.ownerId,
     })
 
     log.info({ channelId: c.id, channelName: c.name }, 'Memory sweep completed')
     await writeMemorySweep(c.id, conversation[conversation.length - 1].sent_at, sweepOutput)
+    sweepRetryAfter.delete(c.id)
     }
   catch (err) {
-    log.error({ err, channelId: c.id, channelName: c.name }, 'Memory sweep failed')
+    sweepRetryAfter.set(c.id, dayjs().add(1, 'hour'))
+    log.error({ err, channelId: c.id, channelName: c.name }, 'Memory sweep failed, retrying in an hour')
   }
     
   }
