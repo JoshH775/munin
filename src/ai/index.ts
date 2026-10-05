@@ -281,9 +281,12 @@ export async function sweepMemory(opts: { channelName: string, messages: Selecta
 
     const raw = res.choices[0].message.content ?? ''
     if (raw.includes('NO_CHANGE') && !raw.includes('<memory>')) return { memory: null, description: null }
-    const description = raw.split('<description>')[1]?.split('</description>')[0]?.trim()
+    // the last block: a glitched first attempt can leave a stray tag in an earlier one
+    const description = raw.includes('<description>')
+      ? raw.split('<description>').at(-1)?.split('</description>')[0]?.trim()
+      : undefined
     const memory = raw.split('<memory>')[1]?.split('</memory>')[0]?.trim()
-    if (!description || !memory || !raw.includes('</memory>')) {
+    if (!description || description.includes('<') || !memory || !raw.includes('</memory>')) {
       log.warn({ raw: raw.slice(0, 300), finish: res.choices[0].finish_reason, ms: dayjs().diff(start) }, 'Sweeper returned unexpected shape')
       throw new Error('Sweeper returned unexpected shape')
     }
