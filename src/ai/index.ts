@@ -240,11 +240,6 @@ export async function listModelIds(): Promise<string[]> {
     .map((m) => m.id)
 }
 
-export const SweeperSchema = z.object({
-memory: z.string().nullable(),
-description: z.string().nullable(),
-})
-
 export async function sweepMemory(opts: { channelName: string, messages: Selectable<Messages>[], doc: string, isRetry?: boolean }) {
   const { messages, channelName, doc, isRetry = false } = opts
 
@@ -256,8 +251,7 @@ export async function sweepMemory(opts: { channelName: string, messages: Selecta
 
   try {
     const res = await client.chat.completions.create({
-      model: 'zai-org/GLM-5.2',
-      response_format: { type: 'json_object' },
+      model: 'deepseek-ai/DeepSeek-V4-Flash-0731',
       messages: [
         { role: 'system', content: sweepSystem },
         {
@@ -265,7 +259,7 @@ export async function sweepMemory(opts: { channelName: string, messages: Selecta
           content: [
             `Channel: ${channelName}`,
             `Now: ${dayjs().tz().format('dddd D MMMM YYYY HH:mm')}, London time.`,
-            `<memory>\n${doc?.trim() || '(empty)'}\n</memory>`,
+            `<memory>\n${doc.trim()}\n</memory>`,
             `<messages>\n${transcript}\n</messages>`,
           ].join('\n\n'),
         },
@@ -273,7 +267,7 @@ export async function sweepMemory(opts: { channelName: string, messages: Selecta
     })
     await insertUsage({
       in_reply_to: null,
-      model: 'zai-org/GLM-5.2',
+      model: 'deepseek-ai/DeepSeek-V4-Flash-0731',
       effort: 'default',
       input_tokens: res.usage?.prompt_tokens ?? 0,
       output_tokens: res.usage?.completion_tokens ?? 0,
@@ -281,16 +275,15 @@ export async function sweepMemory(opts: { channelName: string, messages: Selecta
     })
 
     const raw = res.choices[0].message.content ?? ''
-    const parsed = SweeperSchema.safeParse(JSON.parse(raw))
-    if (!parsed.success) {
-      log.warn({ raw: raw.slice(0, 300), ms: dayjs().diff(start) }, 'Sweeper returned unexpected shape')
+    if (raw.includes('NO_CHANGE') && !raw.includes('<memory>')) return { memory: null, description: null }
+    const description = raw.split('<description>')[1]?.split('</description>')[0]?.trim()
+    const memory = raw.split('<memory>')[1]?.split('</memory>')[0]?.trim()
+    if (!description || !memory || !raw.includes('</memory>')) {
+      log.warn({ raw: raw.slice(0, 300), finish: res.choices[0].finish_reason, ms: dayjs().diff(start) }, 'Sweeper returned unexpected shape')
       throw new Error('Sweeper returned unexpected shape')
     }
 
-    return {
-      memory: parsed.data.memory,
-      description: parsed.data.description,
-    }
+    return { memory, description }
   } catch (err) {
     log.error({ err, ms: dayjs().diff(start) }, 'Sweeper failed')
     if (!isRetry) {
