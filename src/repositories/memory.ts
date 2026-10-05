@@ -1,8 +1,6 @@
 import { sql } from 'kysely'
 import type { Dayjs } from 'dayjs'
 import { db } from '../db'
-import type z from 'zod'
-import type { SweeperSchema } from '../ai'
 
 // The tiered memory block for a channel: global + parent channel + this channel/thread, labelled.
 export async function resolveMemory(
@@ -40,7 +38,7 @@ export async function getMemory(channelId: string): Promise<string | null> {
 export async function writeMemorySweep(
   channelId: string,
   sweptTo: Dayjs,
-  { memory, description }: z.infer<typeof SweeperSchema>,
+  { memory, description }: { memory: string | null; description: string | null },
 ): Promise<void> {
   await db.transaction().execute(async (trx) => {
     // memory references the settings row, so it goes in first

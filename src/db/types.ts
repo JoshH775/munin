@@ -40,15 +40,24 @@ export interface ChannelSettings {
   channel_id: string;
   created_at: Generated<import('dayjs').Dayjs>;
   ephemeral: Generated<boolean>;
+  last_memory_sweep_at: import('dayjs').Dayjs | null;
   muted: Generated<boolean>;
   updated_at: Generated<import('dayjs').Dayjs>;
 }
 
+export interface GlobalMemory {
+  content: string;
+  created_at: Generated<import('dayjs').Dayjs>;
+  description: string | null;
+  id: Generated<boolean>;
+  updated_at: Generated<import('dayjs').Dayjs>;
+}
+
 export interface Memory {
-  as_of: import('dayjs').Dayjs;
   channel_id: string;
   content: string;
   created_at: Generated<import('dayjs').Dayjs>;
+  description: string | null;
   updated_at: Generated<import('dayjs').Dayjs>;
 }
 
@@ -101,6 +110,7 @@ export interface DB {
   _migrations: _Migrations;
   app_settings: AppSettings;
   channel_settings: ChannelSettings;
+  global_memory: GlobalMemory;
   memory: Memory;
   messages: Messages;
   reminders: Reminders;
