@@ -1,6 +1,6 @@
 import { Cron } from 'croner'
 import { setupClient } from './discord/client'
-import { sweepEphemeral, dispatchReminders, sweepMemoryJob } from './jobs'
+import { sweepEphemeral, dispatchReminders, sweepMemoryJob } from './jobHandlers'
 import { log } from './logger'
 
 const client = await setupClient().catch((err) => {
