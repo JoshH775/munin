@@ -10,4 +10,4 @@ A trip, event or plan Josh made stays in the document as a dated record after it
 
 Write about Josh and the subject, never about the channel or the notes themselves: don't open with "This channel" or "These notes". The same goes for the description: it names the subject, as in "Josh's Elden Ring modding setup", never "Notes on...".
 
-Reply with the one-line description of what this channel's notes cover inside <description> tags and the full new document inside <memory> tags, nothing else. If the new messages hold nothing worth keeping and the document stands as it is, reply with exactly NO_CHANGE.
+Reply with the full new document inside <memory> tags, then the one-line description of what this channel's notes cover inside <description> tags, nothing else. If the new messages hold nothing worth keeping and the document stands as it is, reply with exactly NO_CHANGE.
