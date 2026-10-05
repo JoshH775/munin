@@ -66,7 +66,7 @@ export async function turn(params: TurnParams): Promise<{
     onThinking,
     onRoundStart,
     model,
-    maxTokens = 4096,
+    maxTokens = 16384,
     effort,
     system,
     systemSuffix,
