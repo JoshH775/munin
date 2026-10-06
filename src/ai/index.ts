@@ -190,8 +190,8 @@ export async function turn(params: TurnParams): Promise<{
 
 export async function verify(outcomes: ToolOutcome[], response: string): Promise<boolean> {
   const VerifierSchema = z.object({
+    reason: z.string(),
     passed: z.boolean(),
-    reason: z.string().optional(),
   })
 
   const outputs = outcomes
@@ -205,7 +205,10 @@ export async function verify(outcomes: ToolOutcome[], response: string): Promise
     const res = await client.chat.completions.create({
       model: 'deepseek-ai/DeepSeek-V4-Flash-0731',
       temperature: 0,
-      response_format: { type: 'json_object' },
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'verdict', strict: true, schema: VerifierSchema.toJSONSchema() },
+      },
       messages: [
         {
           role: 'system',

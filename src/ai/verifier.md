@@ -4,7 +4,7 @@ You get the tool outputs a response was built from, and the response. Flag a cla
 
 Pass everything else. General knowledge, reasoning, advice, rough estimates ("about an hour away", "roughly £20"), and anything hedged as a guess ("probably", "I think", "not confirmed") are all fine. The response may lean on common knowledge and sensible inference, not only the tool outputs, so a plausible, approximate, or low-stakes unsourced claim passes.
 
-Output only this JSON, nothing else, and no keys beyond those shown:
+Output only this JSON, nothing else, and no keys beyond those shown. Write `reason` before deciding `passed`, in a sentence or two:
 
-- `{ "passed": true }` when nothing crosses the bar.
-- `{ "passed": false, "reason": "<the fabricated fact>" }` when something does.
+- `{ "reason": "<the figures you checked and why they pass>", "passed": true }` when nothing crosses the bar.
+- `{ "reason": "<the fabricated fact>", "passed": false }` when something does.
