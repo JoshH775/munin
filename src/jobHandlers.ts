@@ -81,14 +81,12 @@ export async function dispatchReminders(client: Client): Promise<void> {
 const sweepRetryAfter = new Map<string, Dayjs>()
 
 export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void> {
-  let remaining = 0 // channels not yet checked this run, for the log
+  let remaining = 0 // sweeps still to finish this run, for the log
 
   const sweepChannel = async (
     c: TextChannel | TextThreadChannel,
     conversation: Selectable<Messages>[],
   ) => {
-    remaining--
-    if (sweepRetryAfter.get(c.id)?.isAfter(dayjs())) return
     try {
       const doc = await getMemory(c.id)
       const sweepOutput = await sweepMemory({
@@ -99,10 +97,14 @@ export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void
         joshId: guild.ownerId,
       })
 
-      log.info({ channelId: c.id, channelName: c.name, remaining }, 'Memory sweep completed')
       await writeMemorySweep(c.id, conversation[conversation.length - 1].sent_at, sweepOutput)
       sweepRetryAfter.delete(c.id)
+      log.info(
+        { channelId: c.id, channelName: c.name, remaining: --remaining },
+        'Memory sweep completed',
+      )
     } catch (err) {
+      remaining--
       sweepRetryAfter.set(c.id, dayjs().add(1, 'hour'))
       log.error(
         { err, channelId: c.id, channelName: c.name },
@@ -121,6 +123,7 @@ export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void
     conversation: Selectable<Messages>[]
   }[] = []
   for (const c of channels) {
+    if (sweepRetryAfter.get(c.id)?.isAfter(dayjs())) continue // failed recently, backing off
     const [lastSweptAt, conversation] = await Promise.all([
       getLastMemorySweep(c.id),
       getConversation({ channelId: c.id }),
