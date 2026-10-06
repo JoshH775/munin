@@ -99,9 +99,9 @@ export function tavilyExtractTool(trustedUrls: Set<string>) {
 
         const rows = results.map((r) => {
           let content = r.raw_content
-          if (content.length >= 3000) {
+          if (content.length > 10000) {
             log.warn({ url: r.url, chars: content.length }, 'Extract content truncated')
-            content = `${content.slice(0, 2950)}\n\n[content truncated]`
+            content = `${content.slice(0, 10000)}\n\n[content truncated]`
           }
           return `${r.title} - ${r.url}\n\n${content}`
         })
