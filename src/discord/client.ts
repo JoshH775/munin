@@ -28,6 +28,8 @@ export async function setupClient(): Promise<Client> {
     ],
     // partials so delete events fire for messages not in the cache (older ones)
     partials: [Partials.Message, Partials.Channel],
+    // no cache sweeping, so archived threads stay cached and the memory sweep sees them
+    sweepers: {},
   })
 
   let ready = false

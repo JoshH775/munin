@@ -15,7 +15,6 @@ import { dayjs } from './time'
 import type { Dayjs } from 'dayjs'
 import { getMemory, writeMemorySweep } from './repositories/memory'
 import { sweepMemory } from './ai'
-import { getAllThreads } from './discord/utils'
 import type { Selectable } from 'kysely'
 import type { Messages } from './db/types'
 
@@ -112,18 +111,16 @@ export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void
     }
   }
 
-  const channels = (await guild.channels.fetch())
-    .values()
-    .filter((c): c is TextChannel => !!c && c.isTextBased() && !c.isDMBased())
-  const threads = (await getAllThreads(guild)).filter(
-    (t): t is TextThreadChannel => !!t && t.isTextBased() && !t.isDMBased(),
+  // the cache holds channels and threads, archived ones included, kept current by gateway events
+  const channels = [...guild.channels.cache.values()].filter(
+    (c): c is TextChannel | TextThreadChannel => c.isTextBased() && !c.isDMBased(),
   )
 
   const targets: {
     channel: TextChannel | TextThreadChannel
     conversation: Selectable<Messages>[]
   }[] = []
-  for (const c of [...channels, ...threads]) {
+  for (const c of channels) {
     const [lastSweptAt, conversation] = await Promise.all([
       getLastMemorySweep(c.id),
       getConversation({ channelId: c.id }),
