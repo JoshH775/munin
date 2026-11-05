@@ -1,6 +1,8 @@
 import type { Insertable, Selectable } from 'kysely'
 import type { Dayjs } from 'dayjs'
 import { db } from '../db/index'
+import { dayjs } from '../time'
+import { getLastEncodedAt } from './channelSettings'
 import type { Messages } from '../db/types'
 import type OpenAI from 'openai'
 
@@ -54,18 +56,15 @@ export async function getConversation({
     .execute()
 }
 
-export async function getMessagesSince({
-  channelId,
-  since,
-}: {
-  channelId: string
-  since: Dayjs
-}): Promise<Selectable<Messages>[]> {
+// chat since the channel's last encode, all of it if it's never been encoded
+export async function getUnencoded(channelId: string): Promise<Selectable<Messages>[]> {
+  const lastEncoded = await getLastEncodedAt(channelId)
   return db
     .selectFrom('messages')
     .selectAll()
     .where('channel_id', '=', channelId)
-    .where('sent_at', '>=', since)
+    .where('kind', '=', 'chat')
+    .where('sent_at', '>', lastEncoded ?? dayjs(0))
     .orderBy('sent_at', 'asc')
     .execute()
 }
