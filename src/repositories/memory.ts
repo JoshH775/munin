@@ -1,6 +1,6 @@
-import { sql } from 'kysely'
-import type { Dayjs } from 'dayjs'
 import { db } from '../db'
+import type { Dayjs } from 'dayjs'
+import { dayjs } from '../time'
 
 // The tiered memory block for a channel: global + parent channel + this channel/thread, labelled.
 export async function resolveMemory(
@@ -8,7 +8,7 @@ export async function resolveMemory(
   parentChannelId: string | null,
 ): Promise<string> {
   const ids = [channelId, parentChannelId].filter((id): id is string => id !== null)
-  const memories = await db.selectFrom('memory').selectAll().where('channel_id', 'in', ids).execute()
+  const memories = await db.selectFrom('semantic_memory').selectAll().where('channel_id', 'in', ids).execute()
   const global = await db.selectFrom('global_memory').selectAll().executeTakeFirst()
 
   const parent = parentChannelId ? memories.find((m) => m.channel_id === parentChannelId) : undefined
@@ -25,35 +25,33 @@ export async function resolveMemory(
     .join('\n\n')
 }
 
-export async function getMemory(channelId: string): Promise<string | null> {
+export async function getMemory(channelId: string) {
   const row = await db
-    .selectFrom('memory')
-    .select('content')
+    .selectFrom('semantic_memory')
+    .select(['content', 'description'])
     .where('channel_id', '=', channelId)
     .executeTakeFirst()
-  return row?.content ?? null
+  return row ? { content: row.content, description: row.description } : null
 }
 
-// One sweep's result as one transaction: the watermark, and the doc when it changed.
-export async function writeMemorySweep(
+export async function writeEncoding(params: {
   channelId: string,
-  sweptTo: Dayjs,
-  { memory, description }: { memory: string | null; description: string | null },
-): Promise<void> {
+  semantic: { content: string, description: string } | null,
+  lastEncodedAt: Dayjs,
+}
+) {
+  const { channelId, semantic, lastEncodedAt } = params
   await db.transaction().execute(async (trx) => {
-    // memory references the settings row, so it goes in first
-    await trx
-      .insertInto('channel_settings')
-      .values({ channel_id: channelId, last_memory_sweep_at: sweptTo })
-      .onConflict((oc) => oc.column('channel_id').doUpdateSet({ last_memory_sweep_at: sweptTo }))
-      .execute()
-    if (!memory) return
-    await trx
-      .insertInto('memory')
-      .values({ channel_id: channelId, content: memory, description })
-      .onConflict((oc) =>
-        oc.column('channel_id').doUpdateSet({ content: memory, description, updated_at: sql`now()` }),
-      )
-      .execute()
+    // first: semantic_memory references channel_settings, which may have no row yet
+    await trx.insertInto('channel_settings').values({ channel_id: channelId, last_encoded_at: lastEncodedAt }).onConflict((oc) => oc.column('channel_id').doUpdateSet({ last_encoded_at: lastEncodedAt })).execute()
+
+    if (semantic) {
+      await trx
+        .insertInto('semantic_memory')
+        .values({ channel_id: channelId, content: semantic.content, description: semantic.description })
+        .onConflict((oc) => oc.column('channel_id').doUpdateSet({ content: semantic.content, description: semantic.description, updated_at: dayjs() }))
+        .execute()
+    }
   })
 }
+    
