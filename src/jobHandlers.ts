@@ -7,29 +7,34 @@ import {
   type Client,
   type TextThreadChannel,
 } from 'discord.js'
-import { getLastMemorySweep, listEphemeralChannelIds } from './repositories/channelSettings'
-import { deleteMessages, getConversation, getLatestMessage } from './repositories/messages'
+import { listEphemeralChannelIds } from './repositories/channelSettings'
+import { deleteMessages, getUnencoded } from './repositories/messages'
 import { getDueReminders, markReminderSent } from './repositories/reminders'
 import { log } from './logger'
 import { dayjs } from './time'
 import type { Dayjs } from 'dayjs'
-import { getMemory, writeMemorySweep } from './repositories/memory'
-import { sweepMemory } from './ai'
-import type { Selectable } from 'kysely'
-import type { Messages } from './db/types'
+import { encodeChannel } from './ai/encode'
 
 export async function sweepEphemeral(client: Client): Promise<void> {
   for (const channelId of await listEphemeralChannelIds()) {
-    const last = await getLatestMessage(channelId)
-    if (!last) continue
-    if (dayjs().diff(last.sent_at) < 45 * 60_000) continue
-    const channel = await client.channels.fetch(channelId).catch(() => null)
+    
+    // a chat still waiting on its encode keeps until the next night, or its notes would miss it
+    const unencoded = await getUnencoded(channelId)
+    if (unencoded.some((m) => m.user_id === client.user?.id)) continue
+
+    const channel = await client.channels.fetch(channelId)
     if (!channel || !channel.isTextBased() || channel.isDMBased()) continue
-    const deleted = await channel.bulkDelete(100, true)
-    if (deleted.size > 0) {
+
+    let cleared = 0
+
+    // bulkDelete takes 100 at most, so keep going until a batch comes back short
+    while (true) {
+      const deleted = await channel.bulkDelete(100, true)
       await deleteMessages([...deleted.keys()])
-      log.info({ channelId, cleared: deleted.size }, 'Swept ephemeral channel')
+      cleared += deleted.size
+      if (deleted.size < 100) break
     }
+    if (cleared) log.info({ channelId, cleared }, 'Swept ephemeral channel')
   }
 }
 
@@ -43,7 +48,7 @@ export async function dispatchReminders(client: Client): Promise<void> {
       log.warn({ reminderId: reminder.id }, 'Reminder has no channel')
       continue
     }
-    const channel = await client.channels.fetch(targetChannelId).catch(() => null)
+    const channel = await client.channels.fetch(targetChannelId)
     if (!channel || !channel.isTextBased() || channel.isDMBased()) {
       log.warn({ reminderId: reminder.id, targetChannelId }, 'Reminder channel unavailable')
       continue
@@ -81,67 +86,40 @@ export async function dispatchReminders(client: Client): Promise<void> {
 const sweepRetryAfter = new Map<string, Dayjs>()
 
 export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void> {
-  let remaining = 0 // sweeps still to finish this run, for the log
-
-  const sweepChannel = async (
-    c: TextChannel | TextThreadChannel,
-    conversation: Selectable<Messages>[],
-  ) => {
-    try {
-      const doc = await getMemory(c.id)
-      const sweepOutput = await sweepMemory({
-        channelName: c.name,
-        messages: conversation,
-        doc: doc ?? '',
-        muninId: client.user!.id,
-        joshId: guild.ownerId,
-      })
-
-      await writeMemorySweep(c.id, conversation[conversation.length - 1].sent_at, sweepOutput)
-      sweepRetryAfter.delete(c.id)
-      log.info(
-        { channelId: c.id, channelName: c.name, remaining: --remaining },
-        'Memory sweep completed',
-      )
-    } catch (err) {
-      remaining--
-      sweepRetryAfter.set(c.id, dayjs().add(1, 'hour'))
-      log.error(
-        { err, channelId: c.id, channelName: c.name },
-        'Memory sweep failed, retrying in an hour',
-      )
-    }
-  }
-
   // the cache holds channels and threads, archived ones included, kept current by gateway events
   const channels = [...guild.channels.cache.values()].filter(
     (c): c is TextChannel | TextThreadChannel => c.isTextBased() && !c.isDMBased(),
   )
 
-  const targets: {
-    channel: TextChannel | TextThreadChannel
-    conversation: Selectable<Messages>[]
-  }[] = []
+  const targets: (TextChannel | TextThreadChannel)[] = []
   for (const c of channels) {
     if (sweepRetryAfter.get(c.id)?.isAfter(dayjs())) continue // failed recently, backing off
-    const [lastSweptAt, conversation] = await Promise.all([
-      getLastMemorySweep(c.id),
-      getConversation({ channelId: c.id }),
-    ])
-    const transcript = conversation
-      .filter((m) => m.kind === 'chat' && m.content.trim())
-      .filter((m) => lastSweptAt === null || m.sent_at.isAfter(lastSweptAt))
-    const lastMessage = transcript.at(-1)
+    const unencoded = await getUnencoded(c.id)
+    const lastMessage = unencoded.at(-1)
 
-    if (!lastMessage) continue // nothing new to sweep
+    if (!lastMessage) continue // nothing new to encode
     if (!lastMessage.sent_at.isBefore(dayjs().subtract(30, 'minutes'))) continue // still active
-    if (!transcript.some((m) => m.user_id === client.user?.id)) continue // munin hasn't spoken here
-    targets.push({ channel: c, conversation: transcript })
+    if (!unencoded.some((m) => m.user_id === client.user?.id)) continue // munin hasn't spoken here
+    targets.push(c)
   }
 
-  remaining = targets.length
+  let remaining = targets.length // encodes still to finish this run, for the log
   for (let i = 0; i < targets.length; i += 5) {
-    const batch = targets.slice(i, i + 5)
-    await Promise.all(batch.map(({ channel, conversation }) => sweepChannel(channel, conversation)))
+    await Promise.all(
+      targets.slice(i, i + 5).map(async (c) => {
+        try {
+          await encodeChannel(c, client)
+          sweepRetryAfter.delete(c.id)
+          log.info({ channelId: c.id, channelName: c.name, remaining: --remaining }, 'Channel encoded')
+        } catch (err) {
+          remaining--
+          sweepRetryAfter.set(c.id, dayjs().add(1, 'hour'))
+          log.error(
+            { err, channelId: c.id, channelName: c.name },
+            'Encoding failed, retrying in an hour',
+          )
+        }
+      }),
+    )
   }
 }
