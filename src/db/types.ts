@@ -40,7 +40,7 @@ export interface ChannelSettings {
   channel_id: string;
   created_at: Generated<import('dayjs').Dayjs>;
   ephemeral: Generated<boolean>;
-  last_memory_sweep_at: import('dayjs').Dayjs | null;
+  last_encoded_at: import('dayjs').Dayjs | null;
   muted: Generated<boolean>;
   updated_at: Generated<import('dayjs').Dayjs>;
 }
@@ -50,14 +50,6 @@ export interface GlobalMemory {
   created_at: Generated<import('dayjs').Dayjs>;
   description: string | null;
   id: Generated<boolean>;
-  updated_at: Generated<import('dayjs').Dayjs>;
-}
-
-export interface Memory {
-  channel_id: string;
-  content: string;
-  created_at: Generated<import('dayjs').Dayjs>;
-  description: string | null;
   updated_at: Generated<import('dayjs').Dayjs>;
 }
 
@@ -81,6 +73,14 @@ export interface Reminders {
   received: Generated<boolean>;
   status: Generated<string>;
   target: string | null;
+}
+
+export interface SemanticMemory {
+  channel_id: string;
+  content: string;
+  created_at: Generated<import('dayjs').Dayjs>;
+  description: string | null;
+  updated_at: Generated<import('dayjs').Dayjs>;
 }
 
 export interface ToolLog {
@@ -111,9 +111,9 @@ export interface DB {
   app_settings: AppSettings;
   channel_settings: ChannelSettings;
   global_memory: GlobalMemory;
-  memory: Memory;
   messages: Messages;
   reminders: Reminders;
+  semantic_memory: SemanticMemory;
   tool_log: ToolLog;
   usage: Usage;
 }
