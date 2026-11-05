@@ -27,9 +27,9 @@ export async function resolveSettings(
   }
 }
 
-export async function getLastMemorySweep(channelId: string): Promise<Dayjs | null> {
-  const row = await db.selectFrom('channel_settings').select('last_memory_sweep_at').where('channel_id', '=', channelId).executeTakeFirst()
-  return row?.last_memory_sweep_at ?? null
+export async function getLastEncodedAt(channelId: string): Promise<Dayjs | null> {
+  const row = await db.selectFrom('channel_settings').select('last_encoded_at').where('channel_id', '=', channelId).executeTakeFirst()
+  return row?.last_encoded_at ?? null
 }
 
 // set (not toggle) the mute for a channel. /mute passes true, /unmute passes false.
@@ -65,7 +65,7 @@ export async function toggleEphemeral(channelId: string): Promise<boolean> {
   return next
 }
 
-// channel ids currently flagged ephemeral (the idle sweep's work list).
+// channel ids currently flagged ephemeral (the 4am sweep's work list).
 export async function listEphemeralChannelIds(): Promise<string[]> {
   const rows = await db
     .selectFrom('channel_settings')

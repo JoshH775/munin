@@ -54,10 +54,11 @@ export function toolLogTool(channelId: string) {
     name: 'tool_log',
     label: (n) => `Checked the tool log ${plural(n, 'time')}`,
     description:
-      'Look back at your own past tool calls: which tool ran, when, how long it took, and whether ' +
-      'it failed or was blocked and why. Use it when asked what you did, why something went wrong, ' +
-      'or how a tool has been behaving. Scoped to the current channel unless you pass `channelId`. ' +
-      'Newest first.',
+      'Look back at your own past tool calls: which tool ran, when, how long it took, what it ' +
+      'returned (cut short), and whether it failed or was blocked and why. Use it when asked what ' +
+      'you did, why something went wrong, or how a tool has been behaving, and to recall what an ' +
+      'earlier check found before running it again. Scoped to the current channel unless you pass ' +
+      '`channelId`. Newest first.',
     inputSchema: z.object({
       channelId: z.string().optional().describe('Channel to look at. Defaults to the current one.'),
       tool: z.string().optional().describe('Restrict to one tool by name.'),
@@ -84,6 +85,7 @@ export function toolLogTool(channelId: string) {
           ok: !r.error,
           ms: r.duration_ms,
           input: JSON.stringify(r.input).slice(0, 200),
+          ...(r.output && { output: r.output.slice(0, 1000) }),
           ...(r.error && { error: r.error }),
         })),
       )
