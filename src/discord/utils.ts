@@ -18,7 +18,7 @@ export function splitForDiscord(text: string): string[] {
   let rest = text
   while (rest.length > 2000) {
     let cut = rest.lastIndexOf('\n', 2000)
-    if (cut <= 0) cut = 2000
+    if (cut <= 1) cut = 2000
     parts.push(rest.slice(0, cut))
     rest = `\u200B\n${rest.slice(cut).replace(/^\n/, '')}`
   }

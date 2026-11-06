@@ -8,7 +8,7 @@ const client = await setupClient().catch((err) => {
   process.exit(1)
 })
 
-new Cron('* * * * *', { catch: (err) => log.error({ err }, 'Ephemeral sweep failed') }, () =>
+new Cron('0 4 * * *', { timezone: 'Europe/London', catch: (err) => log.error({ err }, 'Ephemeral sweep failed') }, () =>
   sweepEphemeral(client),
 )
 new Cron('* * * * *', { catch: (err) => log.error({ err }, 'Reminder dispatch failed') }, () =>

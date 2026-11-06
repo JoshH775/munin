@@ -34,6 +34,7 @@
     "dedent": "^1.7.2",
     "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
+    "fast-xml-parser": "^5.11.2",
     "imapflow": "^1.7.6",
     "kysely": "^0.29.5",
     "linkify-it": "^6.1.0",

@@ -46,7 +46,7 @@ const unmute = new SlashCommandBuilder()
 const ephemeral = new SlashCommandBuilder()
   .setName('ephemeral')
   .setDescription(
-    'Toggle this channel as ephemeral (auto-clears ~5 min after the last message, never remembered)',
+    'Toggle this channel as ephemeral (messages clear at 4am each night, munin still keeps notes)',
   )
 
 const clear = new SlashCommandBuilder()
@@ -153,7 +153,7 @@ export async function handleEphemeralInteraction(
   )
   await interaction.reply({
     content: on
-      ? 'This channel is now ephemeral. Messages clear about 5 minutes after the last one, and nothing here enters memory.'
+      ? "This channel is now ephemeral. Messages clear at 4am each night, and munin still keeps notes on what's said here."
       : 'This channel is no longer ephemeral.',
     flags: MessageFlags.Ephemeral,
   })

@@ -1,17 +1,14 @@
 import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { Selectable } from 'kysely'
 import type { Tool } from './makeTool'
 import { executeTool, type ToolOutcome } from './executeTool'
-import type { Messages } from '../db/types'
-import { insertUsage } from '../repositories/usage'
 import { log } from '../logger'
 import OpenAI from 'openai'
 import z from 'zod'
 import { dayjs } from '../time'
 
-const client = new OpenAI({
+export const client = new OpenAI({
   apiKey: process.env.DEEPINFRA_API_KEY,
   baseURL: 'https://api.deepinfra.com/v1/openai',
 })
@@ -21,10 +18,6 @@ const verifierSystem = readFileSync(
   'utf8',
 ).trim()
 
-const sweepSystem = readFileSync(
-  fileURLToPath(new URL('./sweep.md', import.meta.url)),
-  'utf8',
-).trim()
 
 export const efforts = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type Effort = (typeof efforts)[number]
@@ -243,68 +236,3 @@ export async function listModelIds(): Promise<string[]> {
     .map((m) => m.id)
 }
 
-export async function sweepMemory(opts: { channelName: string, messages: Selectable<Messages>[], doc: string, muninId: string, joshId: string, isRetry?: boolean }) {
-  const { messages, channelName, doc, muninId, joshId, isRetry = false } = opts
-  // cheap model first; a malformed reply retries once on the stronger one
-  const model = isRetry ? 'zai-org/GLM-5.2' : 'XiaomiMiMo/MiMo-V2.6-Flash'
-  const speaker = (m: Selectable<Messages>) =>
-    m.user_id === muninId ? 'Munin' : m.user_id === joshId ? 'Josh' : m.user_name
-
-  const transcript = messages
-  .map((m) => `[${m.sent_at.tz().format('YYYY-MM-DD HH:mm')}] ${speaker(m)}: ${m.content}`)
-  .join('\n')
-
-  const start = dayjs()
-
-  try {
-    const res = await client.chat.completions.create({
-      model,
-      max_tokens: 16000,
-      messages: [
-        { role: 'system', content: sweepSystem },
-        {
-          role: 'user',
-          content: [
-            `Channel: ${channelName}`,
-            `Now: ${dayjs().tz().format('dddd D MMMM YYYY HH:mm')}, London time.`,
-            `<memory>\n${doc.trim()}\n</memory>`,
-            `<messages>\n${transcript}\n</messages>`,
-          ].join('\n\n'),
-        },
-      ],
-    })
-    await insertUsage({
-      in_reply_to: null,
-      model,
-      effort: 'default',
-      input_tokens: res.usage?.prompt_tokens ?? 0,
-      output_tokens: res.usage?.completion_tokens ?? 0,
-      cache_read_input_tokens: res.usage?.prompt_tokens_details?.cached_tokens ?? 0,
-    })
-
-    const raw = res.choices[0].message.content ?? ''
-    if (raw.includes('NO_CHANGE') && !raw.includes('<memory>')) return { memory: null, description: null }
-    // the last block: a glitched first attempt can leave a stray tag in an earlier one
-    const description = raw.includes('<description>')
-      ? raw.split('<description>').at(-1)?.split('</description>')[0]?.trim()
-      : undefined
-    const memory = raw.split('<memory>')[1]?.split('</memory>')[0]?.trim()
-    if (!description || description.includes('<') || !memory || !raw.includes('</memory>')) {
-      log.warn({ raw: raw.slice(0, 300), finish: res.choices[0].finish_reason, ms: dayjs().diff(start) }, 'Sweeper returned unexpected shape')
-      throw new Error('Sweeper returned unexpected shape')
-    }
-
-    return { memory, description }
-  } catch (err) {
-    log.error({ err, ms: dayjs().diff(start) }, 'Sweeper failed')
-    if (!isRetry) {
-      log.info({ channelName }, 'Retrying sweeper on GLM-5.2')
-      return sweepMemory({ ...opts, isRetry: true })
-    }
-    throw err
-  }
-    
-      
-
-
-}

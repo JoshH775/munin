@@ -80,7 +80,6 @@ export async function messageHandler(
       for (const url of findUrls(m.content)) trustedUrls.add(url)
     }
     const tools = [
-      // ephemeral channels are throwaway: no memory tools, so nothing here is remembered
       tavilySearchTool(trustedUrls),
       tavilyExtractTool(trustedUrls),
       createReminderTool(client, message.author.id),
@@ -111,7 +110,7 @@ export async function messageHandler(
         : `You are in #${message.channel.name} (id ${channelId}).`,
       topic && `The channel topic is "${topic}".`,
       settings.ephemeral &&
-        'This channel is ephemeral: it clears itself a few minutes after the last message and nothing said here is remembered.',
+        "This channel is ephemeral: its messages are deleted at 4am each night, but your notes on what's said here are kept like any other channel's.",
       memory.trim() && `<memory>\n${memory}\n</memory>`,
     ]
       .filter(Boolean)
