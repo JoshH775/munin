@@ -8,7 +8,7 @@ import {
   type TextThreadChannel,
 } from 'discord.js'
 import { listEphemeralChannelIds } from './repositories/channelSettings'
-import { deleteMessages, getUnencoded } from './repositories/messages'
+import { deleteMessages, getChannelsToEncode, getUnencodedMessages } from './repositories/messages'
 import { getDueReminders, markReminderSent } from './repositories/reminders'
 import { log } from './logger'
 import { dayjs } from './time'
@@ -19,8 +19,8 @@ export async function sweepEphemeral(client: Client): Promise<void> {
   for (const channelId of await listEphemeralChannelIds()) {
     
     // a chat still waiting on its encode keeps until the next night, or its notes would miss it
-    const unencoded = await getUnencoded(channelId)
-    if (unencoded.some((m) => m.user_id === client.user?.id)) continue
+    const unencoded = await getUnencodedMessages(channelId)
+    if (unencoded.length) continue
 
     const channel = await client.channels.fetch(channelId)
     if (!channel || !channel.isTextBased() || channel.isDMBased()) continue
@@ -91,17 +91,9 @@ export async function sweepMemoryJob(client: Client, guild: Guild): Promise<void
     (c): c is TextChannel | TextThreadChannel => c.isTextBased() && !c.isDMBased(),
   )
 
-  const targets: (TextChannel | TextThreadChannel)[] = []
-  for (const c of channels) {
-    if (sweepRetryAfter.get(c.id)?.isAfter(dayjs())) continue // failed recently, backing off
-    const unencoded = await getUnencoded(c.id)
-    const lastMessage = unencoded.at(-1)
-
-    if (!lastMessage) continue // nothing new to encode
-    if (!lastMessage.sent_at.isBefore(dayjs().subtract(30, 'minutes'))) continue // still active
-    if (!unencoded.some((m) => m.user_id === client.user?.id)) continue // munin hasn't spoken here
-    targets.push(c)
-  }
+  const ready = channels.filter((c) => !sweepRetryAfter.get(c.id)?.isAfter(dayjs())) // failed recently, backing off
+  const due = await getChannelsToEncode(ready.map((c) => c.id))
+  const targets = ready.filter((c) => due.includes(c.id))
 
   let remaining = targets.length // encodes still to finish this run, for the log
   for (let i = 0; i < targets.length; i += 5) {

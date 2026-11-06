@@ -57,7 +57,7 @@ export async function getConversation({
 }
 
 // chat since the channel's last encode, all of it if it's never been encoded
-export async function getUnencoded(channelId: string): Promise<Selectable<Messages>[]> {
+export async function getUnencodedMessages(channelId: string): Promise<Selectable<Messages>[]> {
   const lastEncoded = await getLastEncodedAt(channelId)
   return db
     .selectFrom('messages')
@@ -67,6 +67,16 @@ export async function getUnencoded(channelId: string): Promise<Selectable<Messag
     .where('sent_at', '>', lastEncoded ?? dayjs(0))
     .orderBy('sent_at', 'asc')
     .execute()
+}
+
+// channels whose unencoded chat has been quiet for 30 minutes
+export async function getChannelsToEncode(channelIds: string[]): Promise<string[]> {
+  const due: string[] = []
+  for (const id of channelIds) {
+    const lastMessage = (await getUnencodedMessages(id)).at(-1)
+    if (lastMessage?.sent_at.isBefore(dayjs().subtract(30, 'minutes'))) due.push(id)
+  }
+  return due
 }
 
 export function toChatTranscript(
