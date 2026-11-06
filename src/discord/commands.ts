@@ -6,16 +6,13 @@ import {
   SlashCommandBuilder,
   SnowflakeUtil,
 } from 'discord.js'
-import { efforts, listModelIds, type Effort } from '../ai'
+import { efforts, type Effort } from '../ai'
 import { resolveMemory } from '../repositories/memory'
 import { resolveSettings, setMuted, toggleEphemeral } from '../repositories/channelSettings'
 import { deleteMessages } from '../repositories/messages'
 import { getAppSettings, updateAppSettings } from '../repositories/appSettings'
 import { log } from '../logger'
 import { parseTime } from '../time'
-
-// discord caps choices at 25.
-const modelIds = (await listModelIds()).slice(0, 25)
 
 const config = new SlashCommandBuilder()
   .setName('config')
@@ -24,7 +21,13 @@ const config = new SlashCommandBuilder()
     o
       .setName('model')
       .setDescription('Set the app-wide chat model')
-      .addChoices(...modelIds.map((id) => ({ name: id, value: id }))),
+      // chat models compared in evals/chat
+      .addChoices(
+        ...['tencent/Hy4-preview', 'zai-org/GLM-5.3', 'zai-org/GLM-5.2'].map((id) => ({
+          name: id,
+          value: id,
+        })),
+      ),
   )
   .addStringOption((o) =>
     o
